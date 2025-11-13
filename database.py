@@ -1,7 +1,8 @@
 import sqlite3
 import hashlib
+import json
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 
 DB_PATH = Path("savic.db")
 
@@ -34,11 +35,36 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cnpj TEXT UNIQUE NOT NULL,
             razao_social TEXT,
+            email TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_by INTEGER,
             FOREIGN KEY (created_by) REFERENCES users(id)
         )
     """)
+    
+    # Adicionar coluna email se não existir (para bancos de dados já criados)
+    try:
+        cursor.execute("ALTER TABLE empresas ADD COLUMN email TEXT")
+    except sqlite3.OperationalError:
+        # Coluna já existe, não precisa fazer nada
+        pass
+    
+    # Tabela para armazenar dados completos das consultas CNPJA
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS consultas_cnpj (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnpj TEXT UNIQUE NOT NULL,
+            dados_json TEXT NOT NULL,
+            consultado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Criar índice para busca rápida por CNPJ
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_consultas_cnpj ON consultas_cnpj(cnpj)")
+    except sqlite3.OperationalError:
+        pass
     
     conn.commit()
     conn.close()
@@ -96,15 +122,15 @@ def get_user_id(username: str) -> Optional[int]:
     return result[0] if result else None
 
 
-def save_empresa(cnpj: str, razao_social: Optional[str], user_id: int) -> bool:
+def save_empresa(cnpj: str, razao_social: Optional[str], email: Optional[str], user_id: int) -> bool:
     """Salva uma empresa no banco de dados."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
         cursor.execute(
-            "INSERT INTO empresas (cnpj, razao_social, created_by) VALUES (?, ?, ?)",
-            (cnpj, razao_social, user_id)
+            "INSERT INTO empresas (cnpj, razao_social, email, created_by) VALUES (?, ?, ?, ?)",
+            (cnpj, razao_social, email, user_id)
         )
         conn.commit()
         return True
@@ -120,10 +146,68 @@ def get_empresas_by_user(user_id: int) -> list:
     cursor = conn.cursor()
     
     cursor.execute(
-        "SELECT cnpj, razao_social, created_at FROM empresas WHERE created_by = ? ORDER BY created_at DESC",
+        "SELECT cnpj, razao_social, email, created_at FROM empresas WHERE created_by = ? ORDER BY created_at DESC",
         (user_id,)
     )
     results = cursor.fetchall()
     conn.close()
     
     return [dict(row) for row in results]
+
+
+def get_consulta_cnpj(cnpj: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca dados de uma consulta CNPJ no banco de dados.
+    Retorna None se não encontrar.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Remove formatação do CNPJ para busca
+    cnpj_clean = "".join(filter(str.isdigit, cnpj))
+    
+    cursor.execute(
+        "SELECT dados_json, atualizado_em FROM consultas_cnpj WHERE cnpj = ?",
+        (cnpj_clean,)
+    )
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        try:
+            dados = json.loads(result[0])
+            dados["_cached"] = True
+            dados["_cached_at"] = result[1]
+            return dados
+        except json.JSONDecodeError:
+            return None
+    
+    return None
+
+
+def save_consulta_cnpj(cnpj: str, dados: Dict[str, Any]) -> bool:
+    """
+    Salva ou atualiza dados de uma consulta CNPJ no banco de dados.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Remove formatação do CNPJ
+    cnpj_clean = "".join(filter(str.isdigit, cnpj))
+    
+    try:
+        dados_json = json.dumps(dados, ensure_ascii=False)
+        
+        # Usa INSERT OR REPLACE para atualizar se já existir
+        cursor.execute("""
+            INSERT OR REPLACE INTO consultas_cnpj (cnpj, dados_json, atualizado_em)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (cnpj_clean, dados_json))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar consulta: {e}")
+        return False
+    finally:
+        conn.close()

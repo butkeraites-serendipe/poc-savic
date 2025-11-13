@@ -43,3 +43,4 @@ wheels/
 Thumbs.db
 
 .venv
+.env

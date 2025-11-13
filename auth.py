@@ -1,6 +1,6 @@
 import streamlit as st
 from typing import Tuple
-from database import verify_user, create_user, get_user_id
+from database import verify_user, create_user
 
 
 def check_authentication():
