@@ -42,12 +42,21 @@ def init_database():
         )
     """)
     
-    # Adicionar coluna email se não existir (para bancos de dados já criados)
-    try:
-        cursor.execute("ALTER TABLE empresas ADD COLUMN email TEXT")
-    except sqlite3.OperationalError:
-        # Coluna já existe, não precisa fazer nada
-        pass
+    # Adicionar colunas se não existirem (para bancos de dados já criados)
+    colunas_para_adicionar = [
+        ("email", "TEXT"),
+        ("telefone_suspeito", "INTEGER DEFAULT 0"),
+        ("pressa_aprovacao", "INTEGER DEFAULT 0"),
+        ("entrega_marcada", "INTEGER DEFAULT 0"),
+        ("endereco_entrega_diferente", "INTEGER DEFAULT 0")
+    ]
+    
+    for coluna, tipo in colunas_para_adicionar:
+        try:
+            cursor.execute(f"ALTER TABLE empresas ADD COLUMN {coluna} {tipo}")
+        except sqlite3.OperationalError:
+            # Coluna já existe, não precisa fazer nada
+            pass
     
     # Tabela para armazenar dados completos das consultas CNPJA
     cursor.execute("""
@@ -155,16 +164,43 @@ def get_user_id(username: str) -> Optional[int]:
     return result[0] if result else None
 
 
-def save_empresa(cnpj: str, razao_social: Optional[str], email: Optional[str], user_id: int) -> bool:
-    """Salva uma empresa no banco de dados."""
+def save_empresa(
+    cnpj: str,
+    razao_social: Optional[str],
+    email: Optional[str],
+    user_id: int,
+    telefone_suspeito: bool = False,
+    pressa_aprovacao: bool = False,
+    entrega_marcada: bool = False,
+    endereco_entrega_diferente: bool = False
+) -> bool:
+    """
+    Salva uma empresa no banco de dados.
+    
+    Args:
+        cnpj: CNPJ da empresa
+        razao_social: Razão social da empresa
+        email: Email de contato
+        user_id: ID do usuário que está cadastrando
+        telefone_suspeito: Flag indicando telefone suspeito
+        pressa_aprovacao: Flag indicando pressa em aprovar compra
+        entrega_marcada: Flag indicando solicitação de entrega com hora/dia marcados
+        endereco_entrega_diferente: Flag indicando endereço de entrega diferente do cadastro
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute(
-            "INSERT INTO empresas (cnpj, razao_social, email, created_by) VALUES (?, ?, ?, ?)",
-            (cnpj, razao_social, email, user_id)
-        )
+        cursor.execute("""
+            INSERT INTO empresas 
+            (cnpj, razao_social, email, created_by, telefone_suspeito, 
+             pressa_aprovacao, entrega_marcada, endereco_entrega_diferente) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            cnpj, razao_social, email, user_id,
+            int(telefone_suspeito), int(pressa_aprovacao),
+            int(entrega_marcada), int(endereco_entrega_diferente)
+        ))
         conn.commit()
         return True
     except sqlite3.IntegrityError:
@@ -178,14 +214,30 @@ def get_empresas_by_user(user_id: int) -> list:
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute(
-        "SELECT cnpj, razao_social, email, created_at FROM empresas WHERE created_by = ? ORDER BY created_at DESC",
-        (user_id,)
-    )
+    cursor.execute("""
+        SELECT cnpj, razao_social, email, telefone_suspeito, pressa_aprovacao,
+               entrega_marcada, endereco_entrega_diferente, created_at
+        FROM empresas 
+        WHERE created_by = ? 
+        ORDER BY created_at DESC
+    """, (user_id,))
     results = cursor.fetchall()
     conn.close()
     
-    return [dict(row) for row in results]
+    empresas = []
+    for row in results:
+        empresas.append({
+            "cnpj": row[0],
+            "razao_social": row[1],
+            "email": row[2],
+            "telefone_suspeito": bool(row[3]) if row[3] is not None else False,
+            "pressa_aprovacao": bool(row[4]) if row[4] is not None else False,
+            "entrega_marcada": bool(row[5]) if row[5] is not None else False,
+            "endereco_entrega_diferente": bool(row[6]) if row[6] is not None else False,
+            "created_at": row[7]
+        })
+    
+    return empresas
 
 
 def get_consulta_cnpj(cnpj: str) -> Optional[Dict[str, Any]]:

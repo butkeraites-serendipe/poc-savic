@@ -362,6 +362,32 @@ def show_homepage():
             placeholder="contato@empresa.com.br",
             help="Email de contato da empresa"
         )
+        
+        st.divider()
+        st.write("**⚠️ Sinalizações de Risco:**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            telefone_suspeito = st.checkbox(
+                "📞 Número de telefone de contato suspeito",
+                help="Marque se o número de telefone fornecido apresenta características suspeitas"
+            )
+            pressa_aprovacao = st.checkbox(
+                "⏰ Pressa em aprovar uma compra ou indício de pouca negociação",
+                help="Marque se há indícios de pressa excessiva ou falta de negociação"
+            )
+        
+        with col2:
+            entrega_marcada = st.checkbox(
+                "📅 Solicitação de entrega dos produtos com hora e dia marcados",
+                help="Marque se foi solicitada entrega em horário/dia específico"
+            )
+            endereco_entrega_diferente = st.checkbox(
+                "📍 Informativo de endereço de entrega diferente do endereço de cadastro",
+                help="Marque se o endereço de entrega é diferente do endereço cadastrado da empresa"
+            )
+        
         submit_button = st.form_submit_button("Cadastrar Empresa", use_container_width=True)
         
         if submit_button:
@@ -379,7 +405,11 @@ def show_homepage():
                     cnpj_formatted,
                     razao_social if razao_social else None,
                     email if email else None,
-                    user_id
+                    user_id,
+                    telefone_suspeito=telefone_suspeito,
+                    pressa_aprovacao=pressa_aprovacao,
+                    entrega_marcada=entrega_marcada,
+                    endereco_entrega_diferente=endereco_entrega_diferente
                 )
                 
                 if success:
@@ -404,6 +434,23 @@ def show_homepage():
     if empresas:
         for empresa in empresas:
             with st.container():
+                # Verificar se há sinalizações de risco
+                sinalizacoes = []
+                if empresa.get('telefone_suspeito'):
+                    sinalizacoes.append("📞 Telefone suspeito")
+                if empresa.get('pressa_aprovacao'):
+                    sinalizacoes.append("⏰ Pressa em aprovar")
+                if empresa.get('entrega_marcada'):
+                    sinalizacoes.append("📅 Entrega marcada")
+                if empresa.get('endereco_entrega_diferente'):
+                    sinalizacoes.append("📍 Endereço entrega diferente")
+                
+                tem_sinalizacoes = len(sinalizacoes) > 0
+                
+                # Header com alerta se houver sinalizações
+                if tem_sinalizacoes:
+                    st.warning(f"⚠️ **{len(sinalizacoes)} sinalização(ões) de risco**")
+                
                 col1, col2, col3 = st.columns([3, 2, 1])
                 with col1:
                     st.write(f"**CNPJ:** {empresa['cnpj']}")
@@ -416,6 +463,13 @@ def show_homepage():
                         st.write("*Razão social não informada*")
                 with col3:
                     st.caption(f"Cadastrado em: {empresa['created_at']}")
+                
+                # Exibir sinalizações
+                if tem_sinalizacoes:
+                    st.write("**Sinalizações:**")
+                    for sinalizacao in sinalizacoes:
+                        st.write(f"- {sinalizacao}")
+                
                 st.divider()
     else:
         st.info("Nenhuma empresa cadastrada ainda. Use o formulário acima para cadastrar.")
