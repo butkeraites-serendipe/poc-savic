@@ -76,6 +76,25 @@ def init_database():
     except sqlite3.OperationalError:
         pass
     
+    # Tabela para armazenar avaliações de compatibilidade de CNAEs
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS avaliacoes_cnae (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnpj TEXT NOT NULL,
+            compativel INTEGER,
+            score REAL,
+            analise TEXT,
+            observacoes_json TEXT,
+            avaliado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Criar índice para busca por CNPJ
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_avaliacoes_cnpj ON avaliacoes_cnae(cnpj)")
+    except sqlite3.OperationalError:
+        pass
+    
     # Tabela para armazenar dados de geocoding e imagens de endereços
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS enderecos_geocoding (
@@ -465,5 +484,95 @@ def get_endereco_geocoding(cnpj: str) -> Optional[Dict[str, Any]]:
                 pass
         
         return dados
+    
+    return None
+
+
+def save_avaliacao_cnae(cnpj: str, avaliacao: Dict[str, Any]) -> bool:
+    """
+    Salva ou atualiza uma avaliação de compatibilidade de CNAEs.
+    
+    Args:
+        cnpj: CNPJ da empresa (sem formatação)
+        avaliacao: Dicionário com resultado da avaliação
+            {
+                "compativel": bool,
+                "score": float,
+                "analise": str,
+                "observacoes": List[str]
+            }
+    
+    Returns:
+        True se salvou com sucesso, False caso contrário
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Remove formatação do CNPJ
+        cnpj_clean = "".join(filter(str.isdigit, cnpj))
+        
+        compativel = int(avaliacao.get("compativel", False)) if avaliacao.get("compativel") is not None else None
+        score = avaliacao.get("score")
+        analise = avaliacao.get("analise", "")
+        observacoes_json = json.dumps(avaliacao.get("observacoes", []), ensure_ascii=False)
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO avaliacoes_cnae 
+            (cnpj, compativel, score, analise, observacoes_json, avaliado_em)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (cnpj_clean, compativel, score, analise, observacoes_json))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar avaliação CNAE: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_avaliacao_cnae(cnpj: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca avaliação de compatibilidade de CNAEs para um CNPJ.
+    
+    Args:
+        cnpj: CNPJ da empresa
+    
+    Returns:
+        Dicionário com dados da avaliação ou None se não encontrado
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Remove formatação do CNPJ
+    cnpj_clean = "".join(filter(str.isdigit, cnpj))
+    
+    cursor.execute("""
+        SELECT compativel, score, analise, observacoes_json, avaliado_em
+        FROM avaliacoes_cnae
+        WHERE cnpj = ?
+        ORDER BY avaliado_em DESC
+        LIMIT 1
+    """, (cnpj_clean,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        observacoes = []
+        if result[3]:
+            try:
+                observacoes = json.loads(result[3])
+            except:
+                pass
+        
+        return {
+            "compativel": bool(result[0]) if result[0] is not None else None,
+            "score": result[1],
+            "analise": result[2],
+            "observacoes": observacoes,
+            "avaliado_em": result[4]
+        }
     
     return None

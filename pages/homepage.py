@@ -2,10 +2,11 @@ import streamlit as st
 import re
 import base64
 from io import BytesIO
-from database import save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding
+from database import save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding, save_avaliacao_cnae, get_avaliacao_cnae
 from auth import logout_user
 from cnpja_api import consultar_cnpj
 from google_maps_api import processar_endereco_completo, formatar_endereco_para_geocode
+from gemini_api import avaliar_compatibilidade_cnaes
 
 
 def validate_cnpj(cnpj: str) -> bool:
@@ -311,6 +312,68 @@ def show_homepage():
                 st.dataframe(atividades_data, use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhuma atividade CNAE encontrada.")
+            
+            # Seção de Avaliação de Compatibilidade de CNAEs
+            if main_activity and isinstance(main_activity, dict):
+                st.divider()
+                st.write("**🤖 Avaliação de Compatibilidade de CNAEs (Gemini AI):**")
+                
+                cnpj_clean = "".join(filter(str.isdigit, tax_id if tax_id else cnpj_consulta))
+                avaliacao_existente = get_avaliacao_cnae(cnpj_clean)
+                
+                col1, col2 = st.columns([3, 1])
+                with col2:
+                    if st.button("🔍 Avaliar Compatibilidade", use_container_width=True, key="btn_avaliar_cnae"):
+                        with st.spinner("Avaliando compatibilidade dos CNAEs com Gemini AI..."):
+                            try:
+                                avaliacao = avaliar_compatibilidade_cnaes(
+                                    main_activity,
+                                    side_activities if side_activities else [],
+                                    company_name,
+                                    alias
+                                )
+                                
+                                if avaliacao.get("erro"):
+                                    st.error(f"Erro: {avaliacao['erro']}")
+                                else:
+                                    # Salvar avaliação
+                                    save_avaliacao_cnae(cnpj_clean, avaliacao)
+                                    st.success("Avaliação concluída!")
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao avaliar CNAEs: {str(e)}")
+                
+                # Exibir avaliação se existir
+                if avaliacao_existente:
+                    st.write("**📊 Resultado da Avaliação:**")
+                    
+                    compativel = avaliacao_existente.get("compativel")
+                    score = avaliacao_existente.get("score")
+                    
+                    if compativel is not None:
+                        if compativel:
+                            st.success(f"✅ Compatível (Score: {score:.0f}/100)")
+                        else:
+                            st.error(f"❌ Incompatível (Score: {score:.0f}/100)")
+                    elif score is not None:
+                        if score >= 70:
+                            st.success(f"✅ Score: {score:.0f}/100")
+                        elif score >= 50:
+                            st.warning(f"⚠️ Score: {score:.0f}/100")
+                        else:
+                            st.error(f"❌ Score: {score:.0f}/100")
+                    
+                    if avaliacao_existente.get("analise"):
+                        st.write("**Análise:**")
+                        st.write(avaliacao_existente["analise"])
+                    
+                    if avaliacao_existente.get("observacoes"):
+                        st.write("**Observações:**")
+                        for obs in avaliacao_existente["observacoes"]:
+                            st.write(f"- {obs}")
+                    
+                    if avaliacao_existente.get("avaliado_em"):
+                        st.caption(f"Avaliado em: {avaliacao_existente['avaliado_em']}")
             
             # Botão para preencher formulário com dados consultados (fora do form)
             if st.button("💾 Usar estes dados no cadastro", use_container_width=True, key="btn_preencher"):
