@@ -1,8 +1,11 @@
 import streamlit as st
 import re
-from database import save_empresa, get_empresas_by_user
+import base64
+from io import BytesIO
+from database import save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding
 from auth import logout_user
 from cnpja_api import consultar_cnpj
+from google_maps_api import processar_endereco_completo, formatar_endereco_para_geocode
 
 
 def validate_cnpj(cnpj: str) -> bool:
@@ -164,7 +167,7 @@ def show_homepage():
             # Endereço
             if address and isinstance(address, dict):
                 st.divider()
-                st.write("**Endereço:**")
+                st.write("**📍 Endereço:**")
                 endereco_parts = []
                 if address.get("street"):
                     endereco_parts.append(address["street"])
@@ -182,7 +185,92 @@ def show_homepage():
                     endereco_parts.append(f"CEP: {address['zip']}")
                 
                 if endereco_parts:
-                    st.write(", ".join(endereco_parts))
+                    endereco_completo_str = ", ".join(endereco_parts)
+                    st.write(endereco_completo_str)
+                    
+                    # Seção de Geocoding e Imagens
+                    cnpj_clean = "".join(filter(str.isdigit, tax_id if tax_id else cnpj_consulta))
+                    dados_geocoding = get_endereco_geocoding(cnpj_clean)
+                    
+                    # Botão para processar geocoding
+                    col1, col2 = st.columns([3, 1])
+                    with col2:
+                        if st.button("🗺️ Processar Endereço", use_container_width=True, key="btn_geocode"):
+                            with st.spinner("Processando endereço e buscando imagens..."):
+                                try:
+                                    dados_geocoding = processar_endereco_completo(address)
+                                    endereco_formatado = formatar_endereco_para_geocode(address)
+                                    save_endereco_geocoding(cnpj_clean, endereco_formatado, dados_geocoding)
+                                    st.success("Endereço processado com sucesso!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao processar endereço: {str(e)}")
+                    
+                    # Exibir dados de geocoding se existirem
+                    if dados_geocoding:
+                        st.divider()
+                        st.write("**🗺️ Informações de Geocoding:**")
+                        
+                        geocoding = dados_geocoding.get("geocoding", {})
+                        if geocoding:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.write(f"**Coordenadas:** {geocoding.get('lat', 'N/A')}, {geocoding.get('lng', 'N/A')}")
+                                if geocoding.get("formatted_address"):
+                                    st.write(f"**Endereço Formatado:** {geocoding['formatted_address']}")
+                            with col2:
+                                if geocoding.get("place_id"):
+                                    st.write(f"**Place ID:** {geocoding['place_id']}")
+                                if dados_geocoding.get("processado_em"):
+                                    st.caption(f"Processado em: {dados_geocoding['processado_em']}")
+                        
+                        # Street View
+                        street_view = dados_geocoding.get("street_view", {})
+                        street_view_status = street_view.get("status") if street_view else dados_geocoding.get("street_view_status")
+                        
+                        if street_view_status == "OK":
+                            st.write("**📷 Street View:** Disponível")
+                            
+                            # Exibir imagem Street View
+                            street_view_image_bytes = dados_geocoding.get("street_view_image_bytes")
+                            if street_view_image_bytes:
+                                st.image(street_view_image_bytes, caption="Imagem Street View da fachada", use_container_width=True)
+                                
+                                # Link para Google Maps
+                                if geocoding:
+                                    lat = geocoding.get("lat")
+                                    lng = geocoding.get("lng")
+                                    if lat and lng:
+                                        maps_url = f"https://www.google.com/maps?q={lat},{lng}"
+                                        st.markdown(f"[🗺️ Ver no Google Maps]({maps_url})")
+                        else:
+                            st.write("**📷 Street View:** Não disponível para este endereço")
+                        
+                        # Place Photos
+                        place_photos = dados_geocoding.get("place_photos", [])
+                        if place_photos and len(place_photos) > 0:
+                            st.divider()
+                            st.write(f"**📸 Fotos do Local ({len(place_photos)}):**")
+                            
+                            # Exibir imagens se disponíveis
+                            for i, photo in enumerate(place_photos, 1):
+                                if photo.get("image_bytes"):
+                                    st.image(
+                                        photo["image_bytes"],
+                                        caption=f"Foto {i} do local ({photo.get('width', 0)}x{photo.get('height', 0)})",
+                                        use_container_width=True
+                                    )
+                                else:
+                                    st.write(f"**Foto {i}:**")
+                                    st.write(f"- Referência: {photo.get('photo_reference', 'N/A')}")
+                                    st.write(f"- Dimensões: {photo.get('width', 0)}x{photo.get('height', 0)}")
+                        
+                        # Erros se houver
+                        erros = dados_geocoding.get("erros", [])
+                        if erros:
+                            st.warning("⚠️ Alguns erros ocorreram durante o processamento:")
+                            for erro in erros:
+                                st.write(f"- {erro}")
             
             # Todas as atividades CNAE (Principal + Secundárias)
             st.divider()
