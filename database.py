@@ -46,6 +46,7 @@ def init_database():
     colunas_para_adicionar = [
         ("email", "TEXT"),
         ("data_abertura", "TEXT"),
+        ("email_dominio_diferente", "INTEGER DEFAULT 0"),
         ("telefone_suspeito", "INTEGER DEFAULT 0"),
         ("pressa_aprovacao", "INTEGER DEFAULT 0"),
         ("entrega_marcada", "INTEGER DEFAULT 0"),
@@ -184,6 +185,51 @@ def get_user_id(username: str) -> Optional[int]:
     return result[0] if result else None
 
 
+def get_dominio_email(email: Optional[str]) -> Optional[str]:
+    """
+    Extrai o domínio de um email.
+    
+    Args:
+        email: Email completo
+    
+    Returns:
+        Domínio do email ou None se inválido
+    """
+    if not email:
+        return None
+    
+    email = email.strip().lower()
+    if "@" in email:
+        return email.split("@")[1]
+    
+    return None
+
+
+def get_email_cnpja(cnpj: str) -> Optional[str]:
+    """
+    Busca o email cadastrado no CNPJA para um CNPJ.
+    
+    Args:
+        cnpj: CNPJ da empresa (com ou sem formatação)
+    
+    Returns:
+        Email do CNPJA ou None se não encontrado
+    """
+    consulta = get_consulta_cnpj(cnpj)
+    if not consulta:
+        return None
+    
+    emails = consulta.get("emails", [])
+    if emails and isinstance(emails, list) and len(emails) > 0:
+        primeiro_email = emails[0]
+        if isinstance(primeiro_email, dict):
+            return primeiro_email.get("address", "")
+        elif isinstance(primeiro_email, str):
+            return primeiro_email
+    
+    return None
+
+
 def save_empresa(
     cnpj: str,
     razao_social: Optional[str],
@@ -201,7 +247,7 @@ def save_empresa(
     Args:
         cnpj: CNPJ da empresa
         razao_social: Razão social da empresa
-        email: Email de contato
+        email: Email de contato fornecido no cadastro
         user_id: ID do usuário que está cadastrando
         data_abertura: Data de abertura da empresa (formato YYYY-MM-DD)
         telefone_suspeito: Flag indicando telefone suspeito
@@ -213,14 +259,25 @@ def save_empresa(
     cursor = conn.cursor()
     
     try:
+        # Verificar se o domínio do email é diferente do email do CNPJA
+        email_dominio_diferente = False
+        if email:
+            dominio_cadastro = get_dominio_email(email)
+            email_cnpja = get_email_cnpja(cnpj)
+            
+            if dominio_cadastro and email_cnpja:
+                dominio_cnpja = get_dominio_email(email_cnpja)
+                if dominio_cnpja and dominio_cadastro != dominio_cnpja:
+                    email_dominio_diferente = True
+        
         cursor.execute("""
             INSERT INTO empresas 
-            (cnpj, razao_social, email, data_abertura, created_by, telefone_suspeito, 
-             pressa_aprovacao, entrega_marcada, endereco_entrega_diferente) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (cnpj, razao_social, email, data_abertura, created_by, email_dominio_diferente,
+             telefone_suspeito, pressa_aprovacao, entrega_marcada, endereco_entrega_diferente) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             cnpj, razao_social, email, data_abertura, user_id,
-            int(telefone_suspeito), int(pressa_aprovacao),
+            int(email_dominio_diferente), int(telefone_suspeito), int(pressa_aprovacao),
             int(entrega_marcada), int(endereco_entrega_diferente)
         ))
         conn.commit()
@@ -237,8 +294,8 @@ def get_empresas_by_user(user_id: int) -> list:
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT cnpj, razao_social, email, data_abertura, telefone_suspeito, pressa_aprovacao,
-               entrega_marcada, endereco_entrega_diferente, created_at
+        SELECT cnpj, razao_social, email, data_abertura, email_dominio_diferente,
+               telefone_suspeito, pressa_aprovacao, entrega_marcada, endereco_entrega_diferente, created_at
         FROM empresas 
         WHERE created_by = ? 
         ORDER BY created_at DESC
@@ -253,11 +310,12 @@ def get_empresas_by_user(user_id: int) -> list:
             "razao_social": row[1],
             "email": row[2],
             "data_abertura": row[3],
-            "telefone_suspeito": bool(row[4]) if row[4] is not None else False,
-            "pressa_aprovacao": bool(row[5]) if row[5] is not None else False,
-            "entrega_marcada": bool(row[6]) if row[6] is not None else False,
-            "endereco_entrega_diferente": bool(row[7]) if row[7] is not None else False,
-            "created_at": row[8]
+            "email_dominio_diferente": bool(row[4]) if row[4] is not None else False,
+            "telefone_suspeito": bool(row[5]) if row[5] is not None else False,
+            "pressa_aprovacao": bool(row[6]) if row[6] is not None else False,
+            "entrega_marcada": bool(row[7]) if row[7] is not None else False,
+            "endereco_entrega_diferente": bool(row[8]) if row[8] is not None else False,
+            "created_at": row[9]
         })
     
     return empresas

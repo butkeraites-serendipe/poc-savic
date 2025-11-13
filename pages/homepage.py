@@ -511,6 +511,8 @@ def show_homepage():
             with st.container():
                 # Verificar se há sinalizações de risco
                 sinalizacoes = []
+                if empresa.get('email_dominio_diferente'):
+                    sinalizacoes.append("📧 Email com domínio diferente do CNPJA")
                 if empresa.get('telefone_suspeito'):
                     sinalizacoes.append("📞 Telefone suspeito")
                 if empresa.get('pressa_aprovacao'):
