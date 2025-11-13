@@ -316,10 +316,12 @@ def show_homepage():
             if st.button("💾 Usar estes dados no cadastro", use_container_width=True, key="btn_preencher"):
                 cnpj_formatted = format_cnpj(tax_id) if tax_id else format_cnpj(cnpj_consulta)
                 email_value = emails[0].get("address", "") if emails and isinstance(emails[0], dict) else ""
+                data_abertura_value = founded if founded else ""
                 
                 st.session_state.prefill_cnpj = cnpj_formatted
                 st.session_state.prefill_razao_social = company_name
                 st.session_state.prefill_email = email_value
+                st.session_state.prefill_data_abertura = data_abertura_value
                 
                 # Limpar dados da consulta
                 if "consulta_dados" in st.session_state:
@@ -343,6 +345,7 @@ def show_homepage():
         cnpj_prefill = st.session_state.get("prefill_cnpj", "")
         razao_social_prefill = st.session_state.get("prefill_razao_social", "")
         email_prefill = st.session_state.get("prefill_email", "")
+        data_abertura_prefill = st.session_state.get("prefill_data_abertura", "")
         
         cnpj = st.text_input(
             "CNPJ",
@@ -361,6 +364,12 @@ def show_homepage():
             value=email_prefill,
             placeholder="contato@empresa.com.br",
             help="Email de contato da empresa"
+        )
+        data_abertura = st.text_input(
+            "Data de Abertura (opcional)",
+            value=data_abertura_prefill,
+            placeholder="YYYY-MM-DD (ex: 2005-03-03)",
+            help="Data de abertura da empresa no formato YYYY-MM-DD"
         )
         
         st.divider()
@@ -406,6 +415,7 @@ def show_homepage():
                     razao_social if razao_social else None,
                     email if email else None,
                     user_id,
+                    data_abertura=data_abertura if data_abertura else None,
                     telefone_suspeito=telefone_suspeito,
                     pressa_aprovacao=pressa_aprovacao,
                     entrega_marcada=entrega_marcada,
@@ -421,6 +431,8 @@ def show_homepage():
                         del st.session_state.prefill_razao_social
                     if "prefill_email" in st.session_state:
                         del st.session_state.prefill_email
+                    if "prefill_data_abertura" in st.session_state:
+                        del st.session_state.prefill_data_abertura
                 else:
                     st.error("Este CNPJ já foi cadastrado anteriormente.")
     
@@ -456,6 +468,8 @@ def show_homepage():
                     st.write(f"**CNPJ:** {empresa['cnpj']}")
                     if empresa['email']:
                         st.write(f"**Email:** {empresa['email']}")
+                    if empresa.get('data_abertura'):
+                        st.write(f"**Data de Abertura:** {empresa['data_abertura']}")
                 with col2:
                     if empresa['razao_social']:
                         st.write(f"**Razão Social:** {empresa['razao_social']}")

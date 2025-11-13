@@ -45,6 +45,7 @@ def init_database():
     # Adicionar colunas se não existirem (para bancos de dados já criados)
     colunas_para_adicionar = [
         ("email", "TEXT"),
+        ("data_abertura", "TEXT"),
         ("telefone_suspeito", "INTEGER DEFAULT 0"),
         ("pressa_aprovacao", "INTEGER DEFAULT 0"),
         ("entrega_marcada", "INTEGER DEFAULT 0"),
@@ -169,6 +170,7 @@ def save_empresa(
     razao_social: Optional[str],
     email: Optional[str],
     user_id: int,
+    data_abertura: Optional[str] = None,
     telefone_suspeito: bool = False,
     pressa_aprovacao: bool = False,
     entrega_marcada: bool = False,
@@ -182,6 +184,7 @@ def save_empresa(
         razao_social: Razão social da empresa
         email: Email de contato
         user_id: ID do usuário que está cadastrando
+        data_abertura: Data de abertura da empresa (formato YYYY-MM-DD)
         telefone_suspeito: Flag indicando telefone suspeito
         pressa_aprovacao: Flag indicando pressa em aprovar compra
         entrega_marcada: Flag indicando solicitação de entrega com hora/dia marcados
@@ -193,11 +196,11 @@ def save_empresa(
     try:
         cursor.execute("""
             INSERT INTO empresas 
-            (cnpj, razao_social, email, created_by, telefone_suspeito, 
+            (cnpj, razao_social, email, data_abertura, created_by, telefone_suspeito, 
              pressa_aprovacao, entrega_marcada, endereco_entrega_diferente) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            cnpj, razao_social, email, user_id,
+            cnpj, razao_social, email, data_abertura, user_id,
             int(telefone_suspeito), int(pressa_aprovacao),
             int(entrega_marcada), int(endereco_entrega_diferente)
         ))
@@ -215,7 +218,7 @@ def get_empresas_by_user(user_id: int) -> list:
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT cnpj, razao_social, email, telefone_suspeito, pressa_aprovacao,
+        SELECT cnpj, razao_social, email, data_abertura, telefone_suspeito, pressa_aprovacao,
                entrega_marcada, endereco_entrega_diferente, created_at
         FROM empresas 
         WHERE created_by = ? 
@@ -230,11 +233,12 @@ def get_empresas_by_user(user_id: int) -> list:
             "cnpj": row[0],
             "razao_social": row[1],
             "email": row[2],
-            "telefone_suspeito": bool(row[3]) if row[3] is not None else False,
-            "pressa_aprovacao": bool(row[4]) if row[4] is not None else False,
-            "entrega_marcada": bool(row[5]) if row[5] is not None else False,
-            "endereco_entrega_diferente": bool(row[6]) if row[6] is not None else False,
-            "created_at": row[7]
+            "data_abertura": row[3],
+            "telefone_suspeito": bool(row[4]) if row[4] is not None else False,
+            "pressa_aprovacao": bool(row[5]) if row[5] is not None else False,
+            "entrega_marcada": bool(row[6]) if row[6] is not None else False,
+            "endereco_entrega_diferente": bool(row[7]) if row[7] is not None else False,
+            "created_at": row[8]
         })
     
     return empresas
