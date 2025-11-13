@@ -2,7 +2,7 @@ import sqlite3
 import hashlib
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, List
 
 DB_PATH = Path("savic.db")
 
@@ -47,6 +47,8 @@ def init_database():
         ("email", "TEXT"),
         ("data_abertura", "TEXT"),
         ("email_dominio_diferente", "INTEGER DEFAULT 0"),
+        ("email_nao_corporativo", "INTEGER DEFAULT 0"),
+        ("email_dominio_recente", "INTEGER DEFAULT 0"),
         ("telefone_suspeito", "INTEGER DEFAULT 0"),
         ("pressa_aprovacao", "INTEGER DEFAULT 0"),
         ("entrega_marcada", "INTEGER DEFAULT 0"),
@@ -95,6 +97,43 @@ def init_database():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_avaliacoes_cnpj ON avaliacoes_cnae(cnpj)")
     except sqlite3.OperationalError:
         pass
+    
+    # Tabela para armazenar domínios de email não corporativos
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dominios_nao_corporativos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dominio TEXT NOT NULL UNIQUE,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Tabela para configurações do sistema
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS configuracao (
+            chave TEXT PRIMARY KEY,
+            valor TEXT NOT NULL,
+            atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Inserir configuração padrão de limite de dias para WHOIS se não existir
+    cursor.execute("SELECT COUNT(*) FROM configuracao WHERE chave = 'whois_min_days'")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("INSERT INTO configuracao (chave, valor) VALUES ('whois_min_days', '180')")
+    
+    # Inserir domínios padrão se a tabela estiver vazia
+    cursor.execute("SELECT COUNT(*) FROM dominios_nao_corporativos")
+    if cursor.fetchone()[0] == 0:
+        dominios_padrao = [
+            "gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
+            "live.com", "msn.com", "icloud.com", "aol.com",
+            "mail.com", "protonmail.com", "yandex.com", "zoho.com"
+        ]
+        for dominio in dominios_padrao:
+            try:
+                cursor.execute("INSERT INTO dominios_nao_corporativos (dominio) VALUES (?)", (dominio,))
+            except sqlite3.IntegrityError:
+                pass
     
     # Tabela para armazenar dados de geocoding e imagens de endereços
     cursor.execute("""
@@ -230,6 +269,146 @@ def get_email_cnpja(cnpj: str) -> Optional[str]:
     return None
 
 
+def is_dominio_nao_corporativo(dominio: Optional[str]) -> bool:
+    """
+    Verifica se um domínio está na lista de domínios não corporativos.
+    
+    Args:
+        dominio: Domínio do email (ex: gmail.com)
+    
+    Returns:
+        True se o domínio for não corporativo, False caso contrário
+    """
+    if not dominio:
+        return False
+    
+    dominio = dominio.strip().lower()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT COUNT(*) FROM dominios_nao_corporativos WHERE dominio = ?", (dominio,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    
+    return count > 0
+
+
+def get_dominios_nao_corporativos() -> List[str]:
+    """
+    Retorna a lista de domínios não corporativos.
+    
+    Returns:
+        Lista de domínios não corporativos
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT dominio FROM dominios_nao_corporativos ORDER BY dominio")
+    resultados = cursor.fetchall()
+    conn.close()
+    
+    return [row[0] for row in resultados]
+
+
+def adicionar_dominio_nao_corporativo(dominio: str) -> bool:
+    """
+    Adiciona um domínio à lista de domínios não corporativos.
+    
+    Args:
+        dominio: Domínio a ser adicionado (ex: gmail.com)
+    
+    Returns:
+        True se adicionado com sucesso, False se já existir
+    """
+    dominio = dominio.strip().lower()
+    if not dominio:
+        return False
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("INSERT INTO dominios_nao_corporativos (dominio) VALUES (?)", (dominio,))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+
+def remover_dominio_nao_corporativo(dominio: str) -> bool:
+    """
+    Remove um domínio da lista de domínios não corporativos.
+    
+    Args:
+        dominio: Domínio a ser removido
+    
+    Returns:
+        True se removido com sucesso, False caso contrário
+    """
+    dominio = dominio.strip().lower()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("DELETE FROM dominios_nao_corporativos WHERE dominio = ?", (dominio,))
+    conn.commit()
+    removido = cursor.rowcount > 0
+    conn.close()
+    
+    return removido
+
+
+def get_config_whois_min_days() -> int:
+    """
+    Retorna o limite mínimo de dias para considerar um domínio como recente.
+    
+    Returns:
+        Número de dias (padrão: 180)
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT valor FROM configuracao WHERE chave = 'whois_min_days'")
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        try:
+            return int(result[0])
+        except (ValueError, TypeError):
+            pass
+    
+    return 180  # Padrão
+
+
+def set_config_whois_min_days(days: int) -> bool:
+    """
+    Define o limite mínimo de dias para considerar um domínio como recente.
+    
+    Args:
+        days: Número de dias
+    
+    Returns:
+        True se atualizado com sucesso
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO configuracao (chave, valor, atualizado_em)
+            VALUES ('whois_min_days', ?, CURRENT_TIMESTAMP)
+        """, (str(days),))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao atualizar configuração: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 def save_empresa(
     cnpj: str,
     razao_social: Optional[str],
@@ -261,23 +440,44 @@ def save_empresa(
     try:
         # Verificar se o domínio do email é diferente do email do CNPJA
         email_dominio_diferente = False
+        email_nao_corporativo = False
+        email_dominio_recente = False
+        
         if email:
             dominio_cadastro = get_dominio_email(email)
-            email_cnpja = get_email_cnpja(cnpj)
             
+            # Verificar se o email é não corporativo
+            if dominio_cadastro:
+                email_nao_corporativo = is_dominio_nao_corporativo(dominio_cadastro)
+            
+            # Verificar se o domínio é diferente do email do CNPJA
+            email_cnpja = get_email_cnpja(cnpj)
             if dominio_cadastro and email_cnpja:
                 dominio_cnpja = get_dominio_email(email_cnpja)
                 if dominio_cnpja and dominio_cadastro != dominio_cnpja:
                     email_dominio_diferente = True
+            
+            # Verificar idade do domínio usando WHOIS
+            try:
+                from whois_check import check_domain_age
+                domain_check = check_domain_age(email)
+                if not domain_check.get("error") and domain_check.get("is_recent"):
+                    email_dominio_recente = True
+            except Exception as e:
+                # Se houver erro na verificação WHOIS, não bloquear o cadastro
+                print(f"Erro ao verificar idade do domínio: {e}")
+                pass
         
         cursor.execute("""
             INSERT INTO empresas 
             (cnpj, razao_social, email, data_abertura, created_by, email_dominio_diferente,
-             telefone_suspeito, pressa_aprovacao, entrega_marcada, endereco_entrega_diferente) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             email_nao_corporativo, email_dominio_recente, telefone_suspeito, pressa_aprovacao, 
+             entrega_marcada, endereco_entrega_diferente) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             cnpj, razao_social, email, data_abertura, user_id,
-            int(email_dominio_diferente), int(telefone_suspeito), int(pressa_aprovacao),
+            int(email_dominio_diferente), int(email_nao_corporativo), int(email_dominio_recente),
+            int(telefone_suspeito), int(pressa_aprovacao),
             int(entrega_marcada), int(endereco_entrega_diferente)
         ))
         conn.commit()
@@ -295,7 +495,8 @@ def get_empresas_by_user(user_id: int) -> list:
     
     cursor.execute("""
         SELECT cnpj, razao_social, email, data_abertura, email_dominio_diferente,
-               telefone_suspeito, pressa_aprovacao, entrega_marcada, endereco_entrega_diferente, created_at
+               email_nao_corporativo, email_dominio_recente, telefone_suspeito, pressa_aprovacao, 
+               entrega_marcada, endereco_entrega_diferente, created_at
         FROM empresas 
         WHERE created_by = ? 
         ORDER BY created_at DESC
@@ -311,11 +512,13 @@ def get_empresas_by_user(user_id: int) -> list:
             "email": row[2],
             "data_abertura": row[3],
             "email_dominio_diferente": bool(row[4]) if row[4] is not None else False,
-            "telefone_suspeito": bool(row[5]) if row[5] is not None else False,
-            "pressa_aprovacao": bool(row[6]) if row[6] is not None else False,
-            "entrega_marcada": bool(row[7]) if row[7] is not None else False,
-            "endereco_entrega_diferente": bool(row[8]) if row[8] is not None else False,
-            "created_at": row[9]
+            "email_nao_corporativo": bool(row[5]) if row[5] is not None else False,
+            "email_dominio_recente": bool(row[6]) if row[6] is not None else False,
+            "telefone_suspeito": bool(row[7]) if row[7] is not None else False,
+            "pressa_aprovacao": bool(row[8]) if row[8] is not None else False,
+            "entrega_marcada": bool(row[9]) if row[9] is not None else False,
+            "endereco_entrega_diferente": bool(row[10]) if row[10] is not None else False,
+            "created_at": row[11]
         })
     
     return empresas

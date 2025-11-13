@@ -2,7 +2,12 @@ import streamlit as st
 import re
 import base64
 from io import BytesIO
-from database import save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding, save_avaliacao_cnae, get_avaliacao_cnae
+from database import (
+    save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding,
+    save_avaliacao_cnae, get_avaliacao_cnae,
+    get_dominios_nao_corporativos, adicionar_dominio_nao_corporativo, remover_dominio_nao_corporativo,
+    get_config_whois_min_days, set_config_whois_min_days
+)
 from auth import logout_user
 from cnpja_api import consultar_cnpj
 from google_maps_api import processar_endereco_completo, formatar_endereco_para_geocode
@@ -400,6 +405,83 @@ def show_homepage():
     
     st.divider()
     
+    # Seção de Configuração de Domínios Não Corporativos
+    with st.expander("⚙️ Configurar Domínios de Email Não Corporativos"):
+        st.write("Gerencie a lista de domínios de email considerados não corporativos (Gmail, Yahoo, etc.)")
+        
+        dominios = get_dominios_nao_corporativos()
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.write("**Domínios cadastrados:**")
+            if dominios:
+                for dominio in dominios:
+                    st.write(f"- {dominio}")
+            else:
+                st.info("Nenhum domínio cadastrado.")
+        
+        with col2:
+            st.write("**Adicionar domínio:**")
+            novo_dominio = st.text_input(
+                "Domínio (ex: gmail.com)",
+                key="novo_dominio",
+                placeholder="gmail.com"
+            )
+            if st.button("➕ Adicionar", key="btn_add_dominio"):
+                if novo_dominio:
+                    dominio_limpo = novo_dominio.strip().lower()
+                    if adicionar_dominio_nao_corporativo(dominio_limpo):
+                        st.success(f"Domínio '{dominio_limpo}' adicionado!")
+                        st.rerun()
+                    else:
+                        st.error(f"Domínio '{dominio_limpo}' já existe ou é inválido.")
+                else:
+                    st.warning("Digite um domínio válido.")
+        
+        # Remover domínios
+        if dominios:
+            st.write("**Remover domínio:**")
+            dominio_remover = st.selectbox(
+                "Selecione o domínio para remover",
+                dominios,
+                key="select_remover_dominio"
+            )
+            if st.button("➖ Remover", key="btn_remover_dominio"):
+                if remover_dominio_nao_corporativo(dominio_remover):
+                    st.success(f"Domínio '{dominio_remover}' removido!")
+                    st.rerun()
+                else:
+                    st.error("Erro ao remover domínio.")
+    
+    st.divider()
+    
+    # Seção de Configuração de Limite WHOIS
+    with st.expander("⚙️ Configurar Verificação de Idade de Domínio (WHOIS)"):
+        st.write("Configure o limite mínimo de dias para considerar um domínio como recente")
+        
+        min_days_atual = get_config_whois_min_days()
+        st.write(f"**Limite atual:** {min_days_atual} dias")
+        
+        novo_limite = st.number_input(
+            "Novo limite (dias)",
+            min_value=1,
+            max_value=3650,
+            value=min_days_atual,
+            key="whois_min_days_input"
+        )
+        
+        if st.button("💾 Salvar Limite", key="btn_salvar_whois"):
+            if set_config_whois_min_days(int(novo_limite)):
+                st.success(f"Limite atualizado para {novo_limite} dias!")
+                st.rerun()
+            else:
+                st.error("Erro ao atualizar limite.")
+        
+        st.info("💡 Domínios criados há menos dias que o limite serão marcados como recentes.")
+    
+    st.divider()
+    
     # Formulário de CNPJ
     st.subheader("Cadastrar Nova Empresa")
     
@@ -511,8 +593,12 @@ def show_homepage():
             with st.container():
                 # Verificar se há sinalizações de risco
                 sinalizacoes = []
+                if empresa.get('email_nao_corporativo'):
+                    sinalizacoes.append("📧 Email não corporativo (Gmail, Yahoo, etc.)")
                 if empresa.get('email_dominio_diferente'):
                     sinalizacoes.append("📧 Email com domínio diferente do CNPJA")
+                if empresa.get('email_dominio_recente'):
+                    sinalizacoes.append("🆕 Domínio do email criado recentemente (WHOIS)")
                 if empresa.get('telefone_suspeito'):
                     sinalizacoes.append("📞 Telefone suspeito")
                 if empresa.get('pressa_aprovacao'):
