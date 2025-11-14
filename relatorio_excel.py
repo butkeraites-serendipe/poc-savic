@@ -99,11 +99,16 @@ def gerar_relatorio_excel(
     linha_atual += 1
     
     # Dados da empresa
+    email_cadastrado_display = dados_empresa.get("email_cadastrado") or "Não informado"
+    email_cnpja_display = dados_empresa.get("email_cnpja") or "Não encontrado"
+    
     dados_empresa_lista = [
         ("CNPJ", formatar_cnpj(cnpj)),
         ("Razão Social", dados_empresa.get("razao_social", "N/A")),
         ("Nome Fantasia", dados_empresa.get("nome_fantasia", "N/A")),
         ("Data de Abertura", dados_empresa.get("data_abertura", "N/A")),
+        ("Email Cadastrado", email_cadastrado_display),
+        ("Email CNPJA", email_cnpja_display),
     ]
     
     for rotulo, valor in dados_empresa_lista:
@@ -222,13 +227,110 @@ def gerar_relatorio_excel(
     
     linha_atual += 1
     
-    # SEÇÃO 4: RESULTADO DA ANÁLISE DE RISCO
+    # SEÇÃO 4: ANÁLISE DE EMAIL E DOMÍNIO
     ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
-    celula_sec4 = ws[f"A{linha_atual}"]
-    celula_sec4.value = "4. RESULTADO DA ANÁLISE DE RISCO"
-    celula_sec4.font = estilo_cabecalho
-    celula_sec4.fill = fill_cabecalho
-    celula_sec4.alignment = alinhamento_esquerda
+    celula_sec4_email = ws[f"A{linha_atual}"]
+    celula_sec4_email.value = "4. ANÁLISE DE EMAIL E DOMÍNIO"
+    celula_sec4_email.font = estilo_cabecalho
+    celula_sec4_email.fill = fill_cabecalho
+    celula_sec4_email.alignment = alinhamento_esquerda
+    linha_atual += 1
+    
+    # Email cadastrado vs CNPJA
+    email_cadastrado = dados_empresa.get("email_cadastrado")
+    email_cnpja = dados_empresa.get("email_cnpja")
+    
+    ws[f"A{linha_atual}"] = "Email Cadastrado:"
+    ws[f"A{linha_atual}"].font = estilo_cabecalho
+    ws[f"A{linha_atual}"].fill = fill_cinza
+    ws[f"A{linha_atual}"].border = border
+    
+    ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+    ws[f"B{linha_atual}"] = email_cadastrado if email_cadastrado else "Não informado"
+    ws[f"B{linha_atual}"].font = estilo_normal
+    ws[f"B{linha_atual}"].border = border
+    linha_atual += 1
+    
+    ws[f"A{linha_atual}"] = "Email CNPJA:"
+    ws[f"A{linha_atual}"].font = estilo_cabecalho
+    ws[f"A{linha_atual}"].fill = fill_cinza
+    ws[f"A{linha_atual}"].border = border
+    
+    ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+    ws[f"B{linha_atual}"] = email_cnpja if email_cnpja else "Não encontrado"
+    ws[f"B{linha_atual}"].font = estilo_normal
+    ws[f"B{linha_atual}"].border = border
+    linha_atual += 1
+    
+    # Comparação de domínios
+    dominio_cadastro = dados_empresa.get("dominio_cadastro")
+    dominio_cnpja = dados_empresa.get("dominio_cnpja")
+    
+    if dominio_cadastro and dominio_cnpja:
+        dominios_iguais = dominio_cadastro.lower() == dominio_cnpja.lower()
+        ws[f"A{linha_atual}"] = "Domínios Compatíveis:"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        
+        ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+        celula_dominios = ws[f"B{linha_atual}"]
+        if dominios_iguais:
+            celula_dominios.value = f"✅ Sim ({dominio_cadastro})"
+            celula_dominios.font = Font(name="Arial", size=10, color="006100")
+        else:
+            celula_dominios.value = f"❌ Não - Cadastro: {dominio_cadastro} | CNPJA: {dominio_cnpja}"
+            celula_dominios.font = Font(name="Arial", size=10, color="C00000", bold=True)
+        celula_dominios.border = border
+        linha_atual += 1
+    
+    # Flags de risco de email
+    sinalizacoes_email = []
+    
+    if dados_empresa.get("email_dominio_diferente"):
+        sinalizacoes_email.append("❌ Email com domínio diferente do CNPJA")
+    
+    if dados_empresa.get("email_nao_corporativo"):
+        sinalizacoes_email.append("⚠️ Email com domínio não corporativo (Gmail, Yahoo, etc.)")
+    
+    if dados_empresa.get("email_dominio_recente"):
+        sinalizacoes_email.append("⚠️ Domínio do email criado recentemente (WHOIS)")
+    
+    if sinalizacoes_email:
+        ws[f"A{linha_atual}"] = "Sinalizações de Risco (Email):"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        linha_atual += 1
+        
+        for sinalizacao in sinalizacoes_email:
+            ws[f"B{linha_atual}"] = sinalizacao
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            ws[f"B{linha_atual}"].font = Font(name="Arial", size=10, color="C00000")
+            ws[f"B{linha_atual}"].border = border
+            ws[f"B{linha_atual}"].alignment = alinhamento_esquerda
+            linha_atual += 1
+    else:
+        ws[f"A{linha_atual}"] = "Sinalizações de Risco (Email):"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        
+        ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+        ws[f"B{linha_atual}"] = "✅ Nenhuma sinalização de risco detectada"
+        ws[f"B{linha_atual}"].font = Font(name="Arial", size=10, color="006100")
+        ws[f"B{linha_atual}"].border = border
+        linha_atual += 1
+    
+    linha_atual += 1
+    
+    # SEÇÃO 5: RESULTADO DA ANÁLISE DE RISCO
+    ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+    celula_sec5 = ws[f"A{linha_atual}"]
+    celula_sec5.value = "5. RESULTADO DA ANÁLISE DE RISCO"
+    celula_sec5.font = estilo_cabecalho
+    celula_sec5.fill = fill_cabecalho
+    celula_sec5.alignment = alinhamento_esquerda
     linha_atual += 1
     
     # Risco Final (destaque)
@@ -277,10 +379,10 @@ def gerar_relatorio_excel(
     
     linha_atual += 1
     
-    # SEÇÃO 5: ANÁLISE VISUAL
+    # SEÇÃO 6: ANÁLISE VISUAL
     ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
     celula_sec5 = ws[f"A{linha_atual}"]
-    celula_sec5.value = "5. ANÁLISE VISUAL (GEMINI VISION)"
+    celula_sec5.value = "6. ANÁLISE VISUAL (GEMINI VISION)"
     celula_sec5.font = estilo_cabecalho
     celula_sec5.fill = fill_cabecalho
     celula_sec5.alignment = alinhamento_esquerda
@@ -332,12 +434,12 @@ def gerar_relatorio_excel(
     
     linha_atual += 1
     
-    # SEÇÃO 6: FLAGS DE RISCO
+    # SEÇÃO 7: FLAGS DE RISCO
     flags = analise_risco.get("flags_risco", [])
     if flags:
         ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
         celula_sec6 = ws[f"A{linha_atual}"]
-        celula_sec6.value = "6. FLAGS DE RISCO"
+        celula_sec6.value = "7. FLAGS DE RISCO"
         celula_sec6.font = estilo_cabecalho
         celula_sec6.fill = fill_cabecalho
         celula_sec6.alignment = alinhamento_esquerda
@@ -358,12 +460,12 @@ def gerar_relatorio_excel(
         
         linha_atual += 1
     
-    # SEÇÃO 7: ANÁLISE DETALHADA
+    # SEÇÃO 8: ANÁLISE DETALHADA
     analise_detalhada = analise_visual.get("analise_detalhada", "")
     if analise_detalhada:
         ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
         celula_sec7 = ws[f"A{linha_atual}"]
-        celula_sec7.value = "7. ANÁLISE DETALHADA"
+        celula_sec7.value = "8. ANÁLISE DETALHADA"
         celula_sec7.font = estilo_cabecalho
         celula_sec7.fill = fill_cabecalho
         celula_sec7.alignment = alinhamento_esquerda
@@ -407,7 +509,11 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     Returns:
         Bytes do arquivo Excel ou None se caminho_saida fornecido
     """
-    from database import get_consulta_cnpj, get_endereco_geocoding, get_analise_risco_endereco
+    from database import (
+        get_consulta_cnpj, get_endereco_geocoding, get_analise_risco_endereco,
+        get_email_cnpja, get_dominio_email
+    )
+    import sqlite3
     
     # Buscar dados
     dados_cnpj = get_consulta_cnpj(cnpj)
@@ -420,12 +526,63 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     if not analise_risco:
         raise ValueError("Análise de risco não encontrada. Execute a análise primeiro.")
     
+    # Buscar dados da empresa cadastrada (flags de email)
+    # O CNPJ pode estar salvo com ou sem formatação, então vamos tentar ambas as formas
+    cnpj_clean = "".join(filter(str.isdigit, cnpj))
+    # Formatar CNPJ para buscar também com formatação
+    cnpj_formatted = f"{cnpj_clean[:2]}.{cnpj_clean[2:5]}.{cnpj_clean[5:8]}/{cnpj_clean[8:12]}-{cnpj_clean[12:]}" if len(cnpj_clean) == 14 else cnpj
+    
+    conn = sqlite3.connect("savic.db")
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    # Tentar buscar com formatação primeiro (como está sendo salvo)
+    cursor.execute("""
+        SELECT email, email_dominio_diferente, email_nao_corporativo, email_dominio_recente
+        FROM empresas
+        WHERE cnpj = ? OR cnpj = ?
+    """, (cnpj_formatted, cnpj_clean))
+    
+    empresa_row = cursor.fetchone()
+    conn.close()
+    
     # Preparar dados da empresa
+    email_cadastrado = None
+    email_dominio_diferente = False
+    email_nao_corporativo = False
+    email_dominio_recente = False
+    
+    if empresa_row:
+        email_cadastrado = empresa_row["email"] if empresa_row["email"] and empresa_row["email"].strip() else None
+        email_dominio_diferente = bool(empresa_row["email_dominio_diferente"]) if empresa_row["email_dominio_diferente"] is not None else False
+        email_nao_corporativo = bool(empresa_row["email_nao_corporativo"]) if empresa_row["email_nao_corporativo"] is not None else False
+        email_dominio_recente = bool(empresa_row["email_dominio_recente"]) if empresa_row["email_dominio_recente"] is not None else False
+    
     dados_empresa = {
         "razao_social": dados_cnpj.get("company", {}).get("name") or dados_cnpj.get("name", "N/A"),
         "nome_fantasia": dados_cnpj.get("alias", "N/A"),
-        "data_abertura": dados_cnpj.get("founded", "N/A")
+        "data_abertura": dados_cnpj.get("founded", "N/A"),
+        "email_cadastrado": email_cadastrado,
+        "email_dominio_diferente": email_dominio_diferente,
+        "email_nao_corporativo": email_nao_corporativo,
+        "email_dominio_recente": email_dominio_recente
     }
+    
+    # Buscar email do CNPJA para comparação
+    email_cnpja = get_email_cnpja(cnpj_clean)
+    dados_empresa["email_cnpja"] = email_cnpja
+    
+    if dados_empresa["email_cadastrado"]:
+        dominio_cadastro = get_dominio_email(dados_empresa["email_cadastrado"])
+        dados_empresa["dominio_cadastro"] = dominio_cadastro
+    else:
+        dados_empresa["dominio_cadastro"] = None
+    
+    if email_cnpja:
+        dominio_cnpja = get_dominio_email(email_cnpja)
+        dados_empresa["dominio_cnpja"] = dominio_cnpja
+    else:
+        dados_empresa["dominio_cnpja"] = None
     
     # Preparar CNAEs
     cnaes = []
