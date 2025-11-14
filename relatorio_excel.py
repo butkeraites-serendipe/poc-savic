@@ -884,7 +884,6 @@ def gerar_relatorio_excel(
         wb.save(caminho_saida)
         return None
     else:
-        from io import BytesIO
         output = BytesIO()
         wb.save(output)
         output.seek(0)

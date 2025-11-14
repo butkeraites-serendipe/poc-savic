@@ -56,7 +56,7 @@ def get_domain_creation_date(domain: str) -> Optional[datetime]:
         Data de criação do domínio ou None se não conseguir obter
     """
     if not WHOIS_AVAILABLE:
-        print(f"Biblioteca WHOIS não disponível para consultar {domain}")
+        # Biblioteca WHOIS não disponível - retornar silenciosamente
         return None
     
     try:
@@ -64,35 +64,57 @@ def get_domain_creation_date(domain: str) -> Optional[datetime]:
             # Verificar qual método está disponível
             w = None
             try:
-                if hasattr(whois, 'whois'):
-                    # Forma 1: whois.whois() (versão antiga)
-                    w = whois.whois(domain)
-                elif hasattr(whois, 'query'):
-                    # Forma 2: whois.query() (versão nova)
-                    w = whois.query(domain)
-                elif callable(whois):
-                    # Forma 3: whois() diretamente
-                    w = whois(domain)
-                else:
-                    # Tentar importar a função correta
-                    try:
-                        from whois import whois as whois_func
-                        w = whois_func(domain)
-                    except ImportError:
-                        pass
+                # Suprimir stderr temporariamente para evitar mensagens de stdbuf
+                import sys
+                import os
+                import contextlib
+                
+                # Criar um contexto para suprimir stderr completamente
+                @contextlib.contextmanager
+                def suppress_stderr():
+                    with open(os.devnull, 'w') as devnull:
+                        old_stderr = sys.stderr
+                        sys.stderr = devnull
+                        try:
+                            yield
+                        finally:
+                            sys.stderr = old_stderr
+                
+                # Tentar chamar whois com stderr suprimido
+                with suppress_stderr():
+                    if hasattr(whois, 'whois'):
+                        # Forma 1: whois.whois() (versão antiga)
+                        w = whois.whois(domain)
+                    elif hasattr(whois, 'query'):
+                        # Forma 2: whois.query() (versão nova)
+                        w = whois.query(domain)
+                    elif callable(whois):
+                        # Forma 3: whois() diretamente
+                        w = whois(domain)
+                    else:
+                        # Tentar importar a função correta
+                        try:
+                            from whois import whois as whois_func
+                            w = whois_func(domain)
+                        except ImportError:
+                            pass
             except (FileNotFoundError, OSError) as e:
                 # Erro relacionado a comandos do sistema (stdbuf, whois command, etc.)
                 error_msg = str(e)
                 if 'stdbuf' in error_msg or 'No such file' in error_msg:
                     # Tentar usar subprocess diretamente como fallback
+                    # Suprimir stderr do subprocess também
                     try:
                         import subprocess
-                        result = subprocess.run(
-                            ['whois', domain],
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
+                        import os
+                        with open(os.devnull, 'w') as devnull:
+                            result = subprocess.run(
+                                ['whois', domain],
+                                capture_output=True,
+                                text=True,
+                                timeout=10,
+                                stderr=devnull  # Suprimir stderr do comando whois
+                            )
                         if result.returncode == 0:
                             # Tentar parsear a saída do whois manualmente
                             # Buscar por padrões comuns de data de criação
@@ -122,15 +144,12 @@ def get_domain_creation_date(domain: str) -> Optional[datetime]:
                     except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
                         pass
                 
-                # Se não conseguir usar subprocess, apenas logar o erro sem bloquear
-                print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+                # Não logar erros de stdbuf - são esperados em alguns sistemas
+                # Apenas retornar None silenciosamente
                 return None
             except Exception as e:
                 # Outros erros (timeout, domínio inexistente, etc.)
-                error_msg = str(e)
-                # Não logar erros comuns de domínio não encontrado
-                if 'no match' not in error_msg.lower() and 'not found' not in error_msg.lower():
-                    print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+                # Não logar nenhum erro - silenciar completamente para não poluir o terminal
                 return None
             
             if w is None:
@@ -143,9 +162,13 @@ def get_domain_creation_date(domain: str) -> Optional[datetime]:
     except Exception as e:
         # Tratar erros de WHOIS (timeout, domínio inexistente, etc.)
         error_msg = str(e)
-        # Não logar erros comuns
-        if 'stdbuf' not in error_msg and 'no match' not in error_msg.lower():
-            print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+        # Não logar erros comuns (stdbuf, no match, etc.)
+        # Esses erros são esperados e não devem poluir o log
+        if ('stdbuf' not in error_msg.lower() and 
+            'no match' not in error_msg.lower() and
+            'not found' not in error_msg.lower()):
+            # Apenas logar erros realmente inesperados
+            pass  # Silenciar todos os erros de WHOIS para não poluir o terminal
         return None
     
     # Extrair data de criação dependendo da biblioteca
