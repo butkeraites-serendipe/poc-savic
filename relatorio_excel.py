@@ -227,6 +227,92 @@ def gerar_relatorio_excel(
     
     linha_atual += 1
     
+    # SEÇÃO 3.5: ANÁLISE SEMÂNTICA DE CNAE (IA)
+    avaliacao_cnae = dados_empresa.get("avaliacao_cnae")
+    if avaliacao_cnae:
+        ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+        celula_sec35 = ws[f"A{linha_atual}"]
+        celula_sec35.value = "3.5. ANÁLISE SEMÂNTICA DE CNAE (IA)"
+        celula_sec35.font = estilo_cabecalho
+        celula_sec35.fill = fill_cabecalho
+        celula_sec35.alignment = alinhamento_esquerda
+        linha_atual += 1
+        
+        # Compatível
+        compativel = avaliacao_cnae.get("compativel")
+        ws[f"A{linha_atual}"] = "Compatível:"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        
+        ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+        celula_compativel = ws[f"B{linha_atual}"]
+        if compativel is True:
+            celula_compativel.value = "✅ Sim"
+            celula_compativel.font = Font(name="Arial", size=10, color="006100", bold=True)
+        elif compativel is False:
+            celula_compativel.value = "❌ Não"
+            celula_compativel.font = Font(name="Arial", size=10, color="C00000", bold=True)
+        else:
+            celula_compativel.value = "Indefinido"
+            celula_compativel.font = estilo_normal
+        celula_compativel.border = border
+        linha_atual += 1
+        
+        # Score
+        score = avaliacao_cnae.get("score")
+        if score is not None:
+            ws[f"A{linha_atual}"] = "Score de Compatibilidade:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            celula_score = ws[f"B{linha_atual}"]
+            celula_score.value = f"{score}/100"
+            if score >= 70:
+                celula_score.font = Font(name="Arial", size=10, color="006100", bold=True)
+            elif score >= 50:
+                celula_score.font = Font(name="Arial", size=10, color="FFC000", bold=True)
+            else:
+                celula_score.font = Font(name="Arial", size=10, color="C00000", bold=True)
+            celula_score.border = border
+            linha_atual += 1
+        
+        # Análise
+        analise_texto = avaliacao_cnae.get("analise", "")
+        if analise_texto:
+            ws[f"A{linha_atual}"] = "Análise:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            ws[f"B{linha_atual}"] = analise_texto
+            ws[f"B{linha_atual}"].font = estilo_normal
+            ws[f"B{linha_atual}"].border = border
+            ws[f"B{linha_atual}"].alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            linha_atual += 1
+        
+        # Observações
+        observacoes = avaliacao_cnae.get("observacoes", [])
+        if observacoes:
+            ws[f"A{linha_atual}"] = "Observações:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            linha_atual += 1
+            
+            for i, obs in enumerate(observacoes, 1):
+                ws[f"B{linha_atual}"] = f"{i}. {obs}"
+                ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+                ws[f"B{linha_atual}"].font = estilo_normal
+                ws[f"B{linha_atual}"].border = border
+                ws[f"B{linha_atual}"].alignment = alinhamento_esquerda
+                linha_atual += 1
+        
+        linha_atual += 1
+    
     # SEÇÃO 4: ANÁLISE DE EMAIL E DOMÍNIO
     ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
     celula_sec4_email = ws[f"A{linha_atual}"]
@@ -296,6 +382,9 @@ def gerar_relatorio_excel(
     if dados_empresa.get("email_dominio_recente"):
         sinalizacoes_email.append("⚠️ Domínio do email criado recentemente (WHOIS)")
     
+    if dados_empresa.get("email_typosquatting"):
+        sinalizacoes_email.append("🚨 Possível typosquatting detectado (domínio similar ao CNPJA)")
+    
     if sinalizacoes_email:
         ws[f"A{linha_atual}"] = "Sinalizações de Risco (Email):"
         ws[f"A{linha_atual}"].font = estilo_cabecalho
@@ -320,6 +409,182 @@ def gerar_relatorio_excel(
         ws[f"B{linha_atual}"] = "✅ Nenhuma sinalização de risco detectada"
         ws[f"B{linha_atual}"].font = Font(name="Arial", size=10, color="006100")
         ws[f"B{linha_atual}"].border = border
+        linha_atual += 1
+    
+    # Detalhes da Idade do Domínio (WHOIS)
+    whois_info = dados_empresa.get("whois_info")
+    if whois_info and not whois_info.get("error"):
+        linha_atual += 1
+        ws[f"A{linha_atual}"] = "Detalhes da Idade do Domínio (WHOIS):"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        linha_atual += 1
+        
+        # Data de criação
+        creation_date = whois_info.get("creation_date")
+        if creation_date:
+            if isinstance(creation_date, str):
+                try:
+                    creation_date = datetime.fromisoformat(creation_date.replace('Z', '+00:00'))
+                except:
+                    pass
+            if isinstance(creation_date, datetime):
+                ws[f"A{linha_atual}"] = "Data de Criação:"
+                ws[f"A{linha_atual}"].font = estilo_cabecalho
+                ws[f"A{linha_atual}"].fill = fill_cinza
+                ws[f"A{linha_atual}"].border = border
+                
+                ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+                ws[f"B{linha_atual}"] = creation_date.strftime("%d/%m/%Y")
+                ws[f"B{linha_atual}"].font = estilo_normal
+                ws[f"B{linha_atual}"].border = border
+                linha_atual += 1
+        
+        # Idade em dias
+        age_days = whois_info.get("age_days")
+        if age_days is not None:
+            ws[f"A{linha_atual}"] = "Idade do Domínio:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            celula_idade = ws[f"B{linha_atual}"]
+            celula_idade.value = f"{age_days} dias"
+            if age_days < 180:
+                celula_idade.font = Font(name="Arial", size=10, color="C00000", bold=True)
+            else:
+                celula_idade.font = estilo_normal
+            celula_idade.border = border
+            linha_atual += 1
+        
+        # Limite configurado
+        threshold_days = whois_info.get("threshold_days")
+        if threshold_days is not None:
+            ws[f"A{linha_atual}"] = "Limite Configurado:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            ws[f"B{linha_atual}"] = f"{threshold_days} dias"
+            ws[f"B{linha_atual}"].font = estilo_normal
+            ws[f"B{linha_atual}"].border = border
+            linha_atual += 1
+    
+    # Detecção de Typosquatting (detalhes)
+    typosquatting_info = dados_empresa.get("typosquatting_info")
+    if typosquatting_info and typosquatting_info.get("suspeito"):
+        linha_atual += 1
+        ws[f"A{linha_atual}"] = "Detecção de Typosquatting:"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        linha_atual += 1
+        
+        # Similaridade
+        similaridade = typosquatting_info.get("similaridade", 0)
+        ws[f"A{linha_atual}"] = "Similaridade:"
+        ws[f"A{linha_atual}"].font = estilo_cabecalho
+        ws[f"A{linha_atual}"].fill = fill_cinza
+        ws[f"A{linha_atual}"].border = border
+        
+        ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+        celula_sim = ws[f"B{linha_atual}"]
+        celula_sim.value = f"{similaridade:.1%}"
+        celula_sim.font = Font(name="Arial", size=10, color="C00000", bold=True)
+        celula_sim.border = border
+        linha_atual += 1
+        
+        # Distância de Levenshtein
+        distancia = typosquatting_info.get("distancia_levenshtein")
+        if distancia is not None:
+            ws[f"A{linha_atual}"] = "Distância (Levenshtein):"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            ws[f"B{linha_atual}"] = f"{distancia} caracteres"
+            ws[f"B{linha_atual}"].font = estilo_normal
+            ws[f"B{linha_atual}"].border = border
+            linha_atual += 1
+        
+        # Typos detectados
+        typos = typosquatting_info.get("typos_detectados", [])
+        if typos:
+            ws[f"A{linha_atual}"] = "Typos Detectados:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            linha_atual += 1
+            
+            for typo in typos:
+                ws[f"B{linha_atual}"] = f"• {typo}"
+                ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+                ws[f"B{linha_atual}"].font = estilo_normal
+                ws[f"B{linha_atual}"].border = border
+                ws[f"B{linha_atual}"].alignment = alinhamento_esquerda
+                linha_atual += 1
+        
+        # Mensagem
+        mensagem = typosquatting_info.get("mensagem", "")
+        if mensagem:
+            ws[f"A{linha_atual}"] = "Análise:"
+            ws[f"A{linha_atual}"].font = estilo_cabecalho
+            ws[f"A{linha_atual}"].fill = fill_cinza
+            ws[f"A{linha_atual}"].border = border
+            
+            ws.merge_cells(f"B{linha_atual}:D{linha_atual}")
+            ws[f"B{linha_atual}"] = mensagem
+            ws[f"B{linha_atual}"].font = Font(name="Arial", size=10, color="C00000")
+            ws[f"B{linha_atual}"].border = border
+            ws[f"B{linha_atual}"].alignment = alinhamento_esquerda
+            linha_atual += 1
+    
+    linha_atual += 1
+    
+    # SEÇÃO 4.5: OUTRAS SINALIZAÇÕES DE RISCO
+    outras_sinalizacoes = []
+    if dados_empresa.get("telefone_suspeito"):
+        outras_sinalizacoes.append("❌ Telefone suspeito")
+    if dados_empresa.get("pressa_aprovacao"):
+        outras_sinalizacoes.append("⚠️ Pressa em aprovação")
+    if dados_empresa.get("entrega_marcada"):
+        outras_sinalizacoes.append("⚠️ Entrega marcada")
+    if dados_empresa.get("endereco_entrega_diferente"):
+        outras_sinalizacoes.append("⚠️ Endereço de entrega diferente do cadastro")
+    
+    if outras_sinalizacoes:
+        ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+        celula_sec45 = ws[f"A{linha_atual}"]
+        celula_sec45.value = "4.5. OUTRAS SINALIZAÇÕES DE RISCO"
+        celula_sec45.font = estilo_cabecalho
+        celula_sec45.fill = fill_cabecalho
+        celula_sec45.alignment = alinhamento_esquerda
+        linha_atual += 1
+        
+        for sinalizacao in outras_sinalizacoes:
+            ws[f"A{linha_atual}"] = sinalizacao
+            ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+            ws[f"A{linha_atual}"].font = Font(name="Arial", size=10, color="C00000")
+            ws[f"A{linha_atual}"].border = border
+            ws[f"A{linha_atual}"].alignment = alinhamento_esquerda
+            linha_atual += 1
+    else:
+        ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+        celula_sec45 = ws[f"A{linha_atual}"]
+        celula_sec45.value = "4.5. OUTRAS SINALIZAÇÕES DE RISCO"
+        celula_sec45.font = estilo_cabecalho
+        celula_sec45.fill = fill_cabecalho
+        celula_sec45.alignment = alinhamento_esquerda
+        linha_atual += 1
+        
+        ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+        ws[f"A{linha_atual}"] = "✅ Nenhuma outra sinalização de risco detectada"
+        ws[f"A{linha_atual}"].font = Font(name="Arial", size=10, color="006100")
+        ws[f"A{linha_atual}"].border = border
         linha_atual += 1
     
     linha_atual += 1
@@ -511,14 +776,17 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     """
     from database import (
         get_consulta_cnpj, get_endereco_geocoding, get_analise_risco_endereco,
-        get_email_cnpja, get_dominio_email
+        get_email_cnpja, get_dominio_email, get_avaliacao_cnae, get_config_whois_min_days
     )
+    from whois_check import check_domain_age
+    from typosquatting_detector import detect_typosquatting
     import sqlite3
     
     # Buscar dados
     dados_cnpj = get_consulta_cnpj(cnpj)
     dados_endereco = get_endereco_geocoding(cnpj)
     analise_risco = get_analise_risco_endereco(cnpj)
+    avaliacao_cnae = get_avaliacao_cnae(cnpj)
     
     if not dados_cnpj:
         raise ValueError("CNPJ não encontrado no banco de dados")
@@ -526,7 +794,7 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     if not analise_risco:
         raise ValueError("Análise de risco não encontrada. Execute a análise primeiro.")
     
-    # Buscar dados da empresa cadastrada (flags de email)
+    # Buscar dados da empresa cadastrada (flags de email e outras sinalizações)
     # O CNPJ pode estar salvo com ou sem formatação, então vamos tentar ambas as formas
     cnpj_clean = "".join(filter(str.isdigit, cnpj))
     # Formatar CNPJ para buscar também com formatação
@@ -536,9 +804,10 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
-    # Tentar buscar com formatação primeiro (como está sendo salvo)
+    # Buscar todas as flags e sinalizações
     cursor.execute("""
-        SELECT email, email_dominio_diferente, email_nao_corporativo, email_dominio_recente
+        SELECT email, email_dominio_diferente, email_nao_corporativo, email_dominio_recente,
+               email_typosquatting, telefone_suspeito, pressa_aprovacao, entrega_marcada, endereco_entrega_diferente
         FROM empresas
         WHERE cnpj = ? OR cnpj = ?
     """, (cnpj_formatted, cnpj_clean))
@@ -551,38 +820,61 @@ def gerar_relatorio_para_cnpj(cnpj: str, caminho_saida: Optional[str] = None) ->
     email_dominio_diferente = False
     email_nao_corporativo = False
     email_dominio_recente = False
+    email_typosquatting = False
+    telefone_suspeito = False
+    pressa_aprovacao = False
+    entrega_marcada = False
+    endereco_entrega_diferente = False
     
     if empresa_row:
         email_cadastrado = empresa_row["email"] if empresa_row["email"] and empresa_row["email"].strip() else None
         email_dominio_diferente = bool(empresa_row["email_dominio_diferente"]) if empresa_row["email_dominio_diferente"] is not None else False
         email_nao_corporativo = bool(empresa_row["email_nao_corporativo"]) if empresa_row["email_nao_corporativo"] is not None else False
         email_dominio_recente = bool(empresa_row["email_dominio_recente"]) if empresa_row["email_dominio_recente"] is not None else False
+        email_typosquatting = bool(empresa_row["email_typosquatting"]) if empresa_row["email_typosquatting"] is not None else False
+        telefone_suspeito = bool(empresa_row["telefone_suspeito"]) if empresa_row["telefone_suspeito"] is not None else False
+        pressa_aprovacao = bool(empresa_row["pressa_aprovacao"]) if empresa_row["pressa_aprovacao"] is not None else False
+        entrega_marcada = bool(empresa_row["entrega_marcada"]) if empresa_row["entrega_marcada"] is not None else False
+        endereco_entrega_diferente = bool(empresa_row["endereco_entrega_diferente"]) if empresa_row["endereco_entrega_diferente"] is not None else False
+    
+    # Buscar email do CNPJA para comparação
+    email_cnpja = get_email_cnpja(cnpj_clean)
+    dominio_cadastro = get_dominio_email(email_cadastrado) if email_cadastrado else None
+    dominio_cnpja = get_dominio_email(email_cnpja) if email_cnpja else None
+    
+    # Detectar typosquatting (mesmo que já tenha flag, vamos recalcular para ter detalhes)
+    typosquatting_info = None
+    if dominio_cadastro and dominio_cnpja and dominio_cadastro != dominio_cnpja:
+        typosquatting_info = detect_typosquatting(dominio_cadastro, dominio_cnpja)
+    
+    # Buscar dados WHOIS detalhados
+    whois_info = None
+    if email_cadastrado:
+        try:
+            whois_info = check_domain_age(email_cadastrado)
+        except Exception as e:
+            print(f"Erro ao buscar dados WHOIS: {e}")
     
     dados_empresa = {
         "razao_social": dados_cnpj.get("company", {}).get("name") or dados_cnpj.get("name", "N/A"),
         "nome_fantasia": dados_cnpj.get("alias", "N/A"),
         "data_abertura": dados_cnpj.get("founded", "N/A"),
         "email_cadastrado": email_cadastrado,
+        "email_cnpja": email_cnpja,
+        "dominio_cadastro": dominio_cadastro,
+        "dominio_cnpja": dominio_cnpja,
         "email_dominio_diferente": email_dominio_diferente,
         "email_nao_corporativo": email_nao_corporativo,
-        "email_dominio_recente": email_dominio_recente
+        "email_dominio_recente": email_dominio_recente,
+        "email_typosquatting": email_typosquatting,
+        "typosquatting_info": typosquatting_info,
+        "whois_info": whois_info,
+        "telefone_suspeito": telefone_suspeito,
+        "pressa_aprovacao": pressa_aprovacao,
+        "entrega_marcada": entrega_marcada,
+        "endereco_entrega_diferente": endereco_entrega_diferente,
+        "avaliacao_cnae": avaliacao_cnae
     }
-    
-    # Buscar email do CNPJA para comparação
-    email_cnpja = get_email_cnpja(cnpj_clean)
-    dados_empresa["email_cnpja"] = email_cnpja
-    
-    if dados_empresa["email_cadastrado"]:
-        dominio_cadastro = get_dominio_email(dados_empresa["email_cadastrado"])
-        dados_empresa["dominio_cadastro"] = dominio_cadastro
-    else:
-        dados_empresa["dominio_cadastro"] = None
-    
-    if email_cnpja:
-        dominio_cnpja = get_dominio_email(email_cnpja)
-        dados_empresa["dominio_cnpja"] = dominio_cnpja
-    else:
-        dados_empresa["dominio_cnpja"] = None
     
     # Preparar CNAEs
     cnaes = []

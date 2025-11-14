@@ -49,6 +49,7 @@ def init_database():
         ("email_dominio_diferente", "INTEGER DEFAULT 0"),
         ("email_nao_corporativo", "INTEGER DEFAULT 0"),
         ("email_dominio_recente", "INTEGER DEFAULT 0"),
+        ("email_typosquatting", "INTEGER DEFAULT 0"),
         ("telefone_suspeito", "INTEGER DEFAULT 0"),
         ("pressa_aprovacao", "INTEGER DEFAULT 0"),
         ("entrega_marcada", "INTEGER DEFAULT 0"),
@@ -487,6 +488,7 @@ def save_empresa(
         email_dominio_diferente = False
         email_nao_corporativo = False
         email_dominio_recente = False
+        email_typosquatting = False
         
         if email:
             dominio_cadastro = get_dominio_email(email)
@@ -495,12 +497,23 @@ def save_empresa(
             if dominio_cadastro:
                 email_nao_corporativo = is_dominio_nao_corporativo(dominio_cadastro)
             
-            # Verificar se o domínio é diferente do email do CNPJA
+            # Verificar se o domínio é diferente do email do CNPJA e detectar typosquatting
             email_cnpja = get_email_cnpja(cnpj)
             if dominio_cadastro and email_cnpja:
                 dominio_cnpja = get_dominio_email(email_cnpja)
                 if dominio_cnpja and dominio_cadastro != dominio_cnpja:
                     email_dominio_diferente = True
+                    
+                    # Detectar typosquatting
+                    try:
+                        from typosquatting_detector import detect_typosquatting
+                        typosquatting_result = detect_typosquatting(dominio_cadastro, dominio_cnpja)
+                        if typosquatting_result.get("suspeito"):
+                            email_typosquatting = True
+                    except Exception as e:
+                        # Se houver erro na detecção, não bloquear o cadastro
+                        print(f"Erro ao detectar typosquatting: {e}")
+                        pass
             
             # Verificar idade do domínio usando WHOIS
             try:
@@ -516,13 +529,13 @@ def save_empresa(
         cursor.execute("""
             INSERT INTO empresas 
             (cnpj, razao_social, email, data_abertura, created_by, email_dominio_diferente,
-             email_nao_corporativo, email_dominio_recente, telefone_suspeito, pressa_aprovacao, 
+             email_nao_corporativo, email_dominio_recente, email_typosquatting, telefone_suspeito, pressa_aprovacao, 
              entrega_marcada, endereco_entrega_diferente) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             cnpj, razao_social, email, data_abertura, user_id,
             int(email_dominio_diferente), int(email_nao_corporativo), int(email_dominio_recente),
-            int(telefone_suspeito), int(pressa_aprovacao),
+            int(email_typosquatting), int(telefone_suspeito), int(pressa_aprovacao),
             int(entrega_marcada), int(endereco_entrega_diferente)
         ))
         conn.commit()
@@ -540,7 +553,7 @@ def get_empresas_by_user(user_id: int) -> list:
     
     cursor.execute("""
         SELECT cnpj, razao_social, email, data_abertura, email_dominio_diferente,
-               email_nao_corporativo, email_dominio_recente, telefone_suspeito, pressa_aprovacao, 
+               email_nao_corporativo, email_dominio_recente, email_typosquatting, telefone_suspeito, pressa_aprovacao, 
                entrega_marcada, endereco_entrega_diferente, created_at
         FROM empresas 
         WHERE created_by = ? 
@@ -559,11 +572,12 @@ def get_empresas_by_user(user_id: int) -> list:
             "email_dominio_diferente": bool(row[4]) if row[4] is not None else False,
             "email_nao_corporativo": bool(row[5]) if row[5] is not None else False,
             "email_dominio_recente": bool(row[6]) if row[6] is not None else False,
-            "telefone_suspeito": bool(row[7]) if row[7] is not None else False,
-            "pressa_aprovacao": bool(row[8]) if row[8] is not None else False,
-            "entrega_marcada": bool(row[9]) if row[9] is not None else False,
-            "endereco_entrega_diferente": bool(row[10]) if row[10] is not None else False,
-            "created_at": row[11]
+            "email_typosquatting": bool(row[7]) if row[7] is not None else False,
+            "telefone_suspeito": bool(row[8]) if row[8] is not None else False,
+            "pressa_aprovacao": bool(row[9]) if row[9] is not None else False,
+            "entrega_marcada": bool(row[10]) if row[10] is not None else False,
+            "endereco_entrega_diferente": bool(row[11]) if row[11] is not None else False,
+            "created_at": row[12]
         })
     
     return empresas
