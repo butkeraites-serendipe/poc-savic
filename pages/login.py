@@ -4,7 +4,7 @@ from auth import login_user
 
 def show_login_page():
     """Exibe a página de login."""
-    st.title("🔐 Login - SAVIC")
+    st.title("🔐 Login")
     
     st.subheader("Faça login na sua conta")
     
