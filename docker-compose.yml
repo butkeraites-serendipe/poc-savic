@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  savic:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - CNPJA_API_KEY=${CNPJA_API_KEY}
+    volumes:
+      - ./savic.db:/app/savic.db
+      - ./data:/app/data
+    restart: unless-stopped
+

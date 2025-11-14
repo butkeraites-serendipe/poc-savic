@@ -16,7 +16,12 @@ st.set_page_config(
     page_title="SAVIC",
     page_icon="🏢",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
 
 # Inicializar banco de dados
