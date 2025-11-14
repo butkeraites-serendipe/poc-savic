@@ -8,6 +8,8 @@ from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image
+from io import BytesIO
 
 
 def formatar_cnpj(cnpj: str) -> str:
@@ -215,6 +217,77 @@ def gerar_relatorio_excel(
             ws[f"B{linha_atual}"].border = border
             ws[f"B{linha_atual}"].alignment = alinhamento_esquerda
             linha_atual += 1
+        
+        # Adicionar imagem do Google Maps (Street View ou Places)
+        imagem_bytes = None
+        tipo_imagem = None
+        
+        # Prioridade 1: Street View
+        if dados_endereco.get("street_view_image_bytes"):
+            imagem_bytes = dados_endereco.get("street_view_image_bytes")
+            tipo_imagem = "Street View"
+        # Prioridade 2: Fotos do Places (primeira foto disponível)
+        elif dados_endereco.get("place_photos"):
+            place_photos = dados_endereco.get("place_photos", [])
+            if place_photos and len(place_photos) > 0:
+                primeira_foto = place_photos[0]
+                if isinstance(primeira_foto, dict) and primeira_foto.get("image_bytes"):
+                    imagem_bytes = primeira_foto.get("image_bytes")
+                    tipo_imagem = "Google Places"
+        
+        # Inserir imagem se disponível
+        if imagem_bytes:
+            linha_atual += 1
+            
+            # Título da imagem
+            ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+            celula_img_titulo = ws[f"A{linha_atual}"]
+            celula_img_titulo.value = f"Imagem do Endereço ({tipo_imagem})"
+            celula_img_titulo.font = estilo_cabecalho
+            celula_img_titulo.fill = fill_cinza
+            celula_img_titulo.border = border
+            celula_img_titulo.alignment = alinhamento_esquerda
+            linha_atual += 1
+            
+            # Inserir imagem
+            try:
+                # Converter bytes para objeto Image do openpyxl
+                img = Image(BytesIO(imagem_bytes))
+                
+                # Redimensionar imagem para caber no Excel
+                # openpyxl usa pixels, mas Excel trabalha melhor com tamanhos menores
+                # Largura máxima ~600 pixels, altura máxima ~400 pixels
+                max_width = 600
+                max_height = 400
+                
+                if img.width > max_width or img.height > max_height:
+                    ratio = min(max_width / img.width, max_height / img.height)
+                    img.width = int(img.width * ratio)
+                    img.height = int(img.height * ratio)
+                
+                # Posicionar imagem (centro das colunas B, C, D)
+                img.anchor = f"B{linha_atual}"
+                
+                # Adicionar imagem à planilha
+                ws.add_image(img)
+                
+                # Ajustar altura da linha para acomodar a imagem
+                # Excel usa pontos (points) para altura de linha: 1 ponto ≈ 1.33 pixels
+                # Converter pixels para pontos e adicionar margem
+                altura_linha_pontos = max(30, int(img.height / 1.33) + 10)
+                ws.row_dimensions[linha_atual].height = altura_linha_pontos
+                
+                # Calcular quantas linhas adicionais a imagem pode ocupar
+                # (a imagem pode se estender por múltiplas linhas)
+                linhas_adicionais = max(1, int((img.height / 1.33) / 15))  # ~15 pontos por linha padrão
+                linha_atual += linhas_adicionais
+                
+            except Exception as e:
+                # Se houver erro ao inserir imagem, apenas registrar
+                ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+                ws[f"A{linha_atual}"] = f"Erro ao carregar imagem: {str(e)}"
+                ws[f"A{linha_atual}"].font = Font(name="Arial", size=9, italic=True, color="FF0000")
+                linha_atual += 1
     else:
         ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
         ws[f"A{linha_atual}"] = "Endereço não processado"

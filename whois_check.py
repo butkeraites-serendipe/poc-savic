@@ -3,10 +3,23 @@ Módulo para verificação de idade de domínios de email usando WHOIS.
 """
 
 import re
-import whois
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta
 from typing import Optional, Dict, Any
+
+# Tentar importar diferentes bibliotecas WHOIS
+try:
+    import whois
+    WHOIS_AVAILABLE = True
+    WHOIS_LIB = 'whois'
+except ImportError:
+    try:
+        from pythonwhois import get_whois
+        WHOIS_AVAILABLE = True
+        WHOIS_LIB = 'pythonwhois'
+    except ImportError:
+        WHOIS_AVAILABLE = False
+        WHOIS_LIB = None
 
 EMAIL_REGEX = re.compile(r"[^@]+@([^@]+\.[^@]+)")
 
@@ -42,14 +55,115 @@ def get_domain_creation_date(domain: str) -> Optional[datetime]:
     Returns:
         Data de criação do domínio ou None se não conseguir obter
     """
-    try:
-        w = whois.whois(domain)
-    except Exception as e:
-        # Tratar erros de WHOIS (timeout, domínio inexistente, etc.)
-        print(f"Erro consultando WHOIS para {domain}: {e}")
+    if not WHOIS_AVAILABLE:
+        print(f"Biblioteca WHOIS não disponível para consultar {domain}")
         return None
     
-    created = w.creation_date
+    try:
+        if WHOIS_LIB == 'whois':
+            # Verificar qual método está disponível
+            w = None
+            try:
+                if hasattr(whois, 'whois'):
+                    # Forma 1: whois.whois() (versão antiga)
+                    w = whois.whois(domain)
+                elif hasattr(whois, 'query'):
+                    # Forma 2: whois.query() (versão nova)
+                    w = whois.query(domain)
+                elif callable(whois):
+                    # Forma 3: whois() diretamente
+                    w = whois(domain)
+                else:
+                    # Tentar importar a função correta
+                    try:
+                        from whois import whois as whois_func
+                        w = whois_func(domain)
+                    except ImportError:
+                        pass
+            except (FileNotFoundError, OSError) as e:
+                # Erro relacionado a comandos do sistema (stdbuf, whois command, etc.)
+                error_msg = str(e)
+                if 'stdbuf' in error_msg or 'No such file' in error_msg:
+                    # Tentar usar subprocess diretamente como fallback
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ['whois', domain],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            # Tentar parsear a saída do whois manualmente
+                            # Buscar por padrões comuns de data de criação
+                            output = result.stdout.lower()
+                            # Padrões comuns: "creation date:", "created:", "registered:", etc.
+                            import re
+                            date_patterns = [
+                                r'creation date[:\s]+(\d{4}-\d{2}-\d{2})',
+                                r'created[:\s]+(\d{4}-\d{2}-\d{2})',
+                                r'registered[:\s]+(\d{4}-\d{2}-\d{2})',
+                                r'data de criação[:\s]+(\d{2}/\d{2}/\d{4})',
+                            ]
+                            for pattern in date_patterns:
+                                match = re.search(pattern, output)
+                                if match:
+                                    date_str = match.group(1)
+                                    try:
+                                        if '/' in date_str:
+                                            # Formato brasileiro DD/MM/YYYY
+                                            created = datetime.strptime(date_str, "%d/%m/%Y")
+                                        else:
+                                            # Formato ISO YYYY-MM-DD
+                                            created = datetime.strptime(date_str, "%Y-%m-%d")
+                                        return created.replace(tzinfo=timezone.utc)
+                                    except ValueError:
+                                        continue
+                    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+                        pass
+                
+                # Se não conseguir usar subprocess, apenas logar o erro sem bloquear
+                print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+                return None
+            except Exception as e:
+                # Outros erros (timeout, domínio inexistente, etc.)
+                error_msg = str(e)
+                # Não logar erros comuns de domínio não encontrado
+                if 'no match' not in error_msg.lower() and 'not found' not in error_msg.lower():
+                    print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+                return None
+            
+            if w is None:
+                return None
+                
+        elif WHOIS_LIB == 'pythonwhois':
+            w = get_whois(domain)
+        else:
+            return None
+    except Exception as e:
+        # Tratar erros de WHOIS (timeout, domínio inexistente, etc.)
+        error_msg = str(e)
+        # Não logar erros comuns
+        if 'stdbuf' not in error_msg and 'no match' not in error_msg.lower():
+            print(f"Erro consultando WHOIS para {domain}: {error_msg}")
+        return None
+    
+    # Extrair data de criação dependendo da biblioteca
+    if WHOIS_LIB == 'whois':
+        # Tentar diferentes atributos possíveis
+        created = None
+        if hasattr(w, 'creation_date'):
+            created = w.creation_date
+        elif hasattr(w, 'created'):
+            created = w.created
+        elif hasattr(w, 'creation'):
+            created = w.creation
+        elif isinstance(w, dict):
+            created = w.get('creation_date') or w.get('created') or w.get('creation')
+    elif WHOIS_LIB == 'pythonwhois':
+        created = w.get('creation_date', [None])[0] if isinstance(w.get('creation_date'), list) else w.get('creation_date')
+    else:
+        return None
     
     # Algumas libs retornam lista se o domínio teve múltiplos registros
     if isinstance(created, list):
