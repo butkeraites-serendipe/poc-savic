@@ -168,35 +168,35 @@ def aplicar_regras_risco(
     
     # Regras de ALTO RISCO
     
-    # 1. CNAE comercial/industrial em zona residencial (PESO ALTO - análise visual)
+    # 1. CNAE comercial/industrial em zona residencial (PESO REDUZIDO - análise visual)
     if tipo_local_esperado in ["COMERCIAL", "INDUSTRIAL"] and zona_aparente == "RESIDENCIAL":
         flags_risco.append("INCOMPATIBILIDADE_ZONA_COMERCIAL_RESIDENCIAL")
-        score_risco += 60  # Aumentado de 40 para 60 (peso muito maior para análise visual)
+        score_risco += 30  # Reduzido pela metade (era 60)
     
-    # 2. Rua de terra em área residencial com CNAE comercial (PESO ALTO - análise visual)
+    # 2. Rua de terra em área residencial com CNAE comercial (PESO REDUZIDO - análise visual)
     if tipo_local_esperado == "COMERCIAL" and zona_aparente == "RESIDENCIAL" and tipo_via == "TERRA":
         flags_risco.append("RUA_TERRA_COM_CNae_COMERCIAL")
-        score_risco += 50  # Aumentado de 30 para 50 (peso muito maior para análise visual)
+        score_risco += 25  # Reduzido pela metade (era 50)
     
-    # 3. Ausência de placas comerciais em CNAE comercial (PESO ALTO - análise visual)
+    # 3. Ausência de placas comerciais em CNAE comercial (PESO REDUZIDO - análise visual)
     if tipo_local_esperado == "COMERCIAL" and not presenca_placas and not presenca_vitrines:
         flags_risco.append("AUSENCIA_SINAIS_COMERCIAIS")
-        score_risco += 45  # Aumentado de 25 para 45 (peso muito maior para análise visual)
+        score_risco += 22  # Reduzido pela metade (era 45)
     
-    # 4. Predominância de casas residenciais sem comércio (PESO ALTO - análise visual)
+    # 4. Predominância de casas residenciais sem comércio (PESO REDUZIDO - análise visual)
     if tipo_local_esperado == "COMERCIAL" and presenca_casas and not presenca_vitrines:
         flags_risco.append("AREA_RESIDENCIAL_SEM_COMERCIO")
-        score_risco += 40  # Aumentado de 20 para 40 (peso muito maior para análise visual)
+        score_risco += 20  # Reduzido pela metade (era 40)
     
-    # 5. Compatibilidade baixa reportada pelo Gemini (PESO MUITO ALTO - análise visual)
+    # 5. Compatibilidade baixa reportada pelo Gemini (PESO REDUZIDO - análise visual)
     if compatibilidade == "BAIXA":
         flags_risco.append("COMPATIBILIDADE_BAIXA_IA")
-        score_risco += 70  # Aumentado de 35 para 70 (peso muito maior para análise visual)
+        score_risco += 35  # Reduzido pela metade (era 70)
     
-    # 6. CNAE industrial em zona residencial ou comercial (sem galpões) (PESO ALTO - análise visual)
+    # 6. CNAE industrial em zona residencial ou comercial (sem galpões) (PESO REDUZIDO - análise visual)
     if tipo_local_esperado == "INDUSTRIAL" and zona_aparente in ["RESIDENCIAL", "COMERCIAL"]:
         flags_risco.append("INDUSTRIA_EM_ZONA_NAO_INDUSTRIAL")
-        score_risco += 65  # Aumentado de 40 para 65 (peso muito maior para análise visual)
+        score_risco += 32  # Reduzido pela metade (era 65)
     
     # Regras de MÉDIO RISCO
     
@@ -209,10 +209,10 @@ def aplicar_regras_risco(
             flags_risco.append("ESCRITORIO_EM_RESIDENCIAL_POSSIVEL_HOME_OFFICE")
             score_risco += 5
     
-    # 8. Compatibilidade média (PESO ALTO - análise visual)
+    # 8. Compatibilidade média (PESO REDUZIDO - análise visual)
     if compatibilidade == "MEDIA":
         flags_risco.append("COMPATIBILIDADE_MEDIA_IA")
-        score_risco += 35  # Aumentado de 15 para 35 (peso muito maior para análise visual)
+        score_risco += 17  # Reduzido pela metade (era 35)
     
     # 9. Zona indefinida
     if zona_aparente == "INDEFINIDO":
