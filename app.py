@@ -13,8 +13,8 @@ load_dotenv()
 
 # Configuração da página
 st.set_page_config(
-    page_title="SAVIC",
-    page_icon="🏢",
+    page_title="Login",
+    page_icon="🔐",
     layout="wide",
     initial_sidebar_state="collapsed",
     menu_items={
