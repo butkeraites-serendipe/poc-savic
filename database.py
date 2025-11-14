@@ -168,6 +168,51 @@ def init_database():
     except sqlite3.OperationalError:
         pass
     
+    # Tabela para análises de risco de endereço (Gemini Vision)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analises_risco_endereco (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnpj TEXT NOT NULL,
+            zona_aparente TEXT,
+            tipo_via TEXT,
+            presenca_placas_comerciais INTEGER,
+            presenca_vitrines_ou_lojas INTEGER,
+            presenca_casas_residenciais INTEGER,
+            compatibilidade_cnae TEXT,
+            motivos_incompatibilidade_json TEXT,
+            sugestao_nivel_risco TEXT,
+            analise_detalhada TEXT,
+            tipo_local_esperado TEXT,
+            risco_final TEXT,
+            flags_risco_json TEXT,
+            score_risco INTEGER,
+            analisado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Criar índice para busca por CNPJ
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_analises_risco_cnpj ON analises_risco_endereco(cnpj)")
+    except sqlite3.OperationalError:
+        pass
+    
+    # Tabela para mapeamento CNAE -> tipo local esperado
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cnae_tipo_local (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnae_codigo TEXT NOT NULL UNIQUE,
+            tipo_local_esperado TEXT NOT NULL,
+            criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Criar índice para busca por código CNAE
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_cnae_tipo_local_codigo ON cnae_tipo_local(cnae_codigo)")
+    except sqlite3.OperationalError:
+        pass
+    
     conn.commit()
     conn.close()
 
@@ -836,4 +881,213 @@ def get_avaliacao_cnae(cnpj: str) -> Optional[Dict[str, Any]]:
             "avaliado_em": result[4]
         }
     
+    return None
+
+
+def save_analise_risco_endereco(cnpj: str, analise_completa: Dict[str, Any]) -> bool:
+    """
+    Salva ou atualiza uma análise de risco de endereço.
+    
+    Args:
+        cnpj: CNPJ da empresa (sem formatação)
+        analise_completa: Dicionário com resultado completo da análise
+            {
+                "analise_visual": {...},
+                "tipo_local_esperado": str,
+                "risco_final": str,
+                "flags_risco": List[str],
+                "score_risco": int
+            }
+    
+    Returns:
+        True se salvou com sucesso, False caso contrário
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Remove formatação do CNPJ
+        cnpj_clean = "".join(filter(str.isdigit, cnpj))
+        
+        analise_visual = analise_completa.get("analise_visual", {})
+        
+        # Extrair dados da análise visual
+        zona_aparente = analise_visual.get("zona_aparente")
+        tipo_via = analise_visual.get("tipo_via")
+        presenca_placas = int(analise_visual.get("presenca_placas_comerciais", False))
+        presenca_vitrines = int(analise_visual.get("presenca_vitrines_ou_lojas", False))
+        presenca_casas = int(analise_visual.get("presenca_casas_residenciais", False))
+        compatibilidade_cnae = analise_visual.get("compatibilidade_cnae")
+        motivos_incompatibilidade_json = json.dumps(analise_visual.get("motivos_incompatibilidade", []), ensure_ascii=False)
+        sugestao_nivel_risco = analise_visual.get("sugestao_nivel_risco")
+        analise_detalhada = analise_visual.get("analise_detalhada", "")
+        
+        # Dados da análise completa
+        tipo_local_esperado = analise_completa.get("tipo_local_esperado")
+        risco_final = analise_completa.get("risco_final")
+        flags_risco_json = json.dumps(analise_completa.get("flags_risco", []), ensure_ascii=False)
+        score_risco = analise_completa.get("score_risco", 0)
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO analises_risco_endereco 
+            (cnpj, zona_aparente, tipo_via, presenca_placas_comerciais, presenca_vitrines_ou_lojas,
+             presenca_casas_residenciais, compatibilidade_cnae, motivos_incompatibilidade_json,
+             sugestao_nivel_risco, analise_detalhada, tipo_local_esperado, risco_final,
+             flags_risco_json, score_risco, analisado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (cnpj_clean, zona_aparente, tipo_via, presenca_placas, presenca_vitrines,
+              presenca_casas, compatibilidade_cnae, motivos_incompatibilidade_json,
+              sugestao_nivel_risco, analise_detalhada, tipo_local_esperado, risco_final,
+              flags_risco_json, score_risco))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar análise de risco: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_analise_risco_endereco(cnpj: str) -> Optional[Dict[str, Any]]:
+    """
+    Busca análise de risco de endereço para um CNPJ.
+    
+    Args:
+        cnpj: CNPJ da empresa
+    
+    Returns:
+        Dicionário com dados da análise ou None se não encontrado
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Remove formatação do CNPJ
+    cnpj_clean = "".join(filter(str.isdigit, cnpj))
+    
+    cursor.execute("""
+        SELECT zona_aparente, tipo_via, presenca_placas_comerciais, presenca_vitrines_ou_lojas,
+               presenca_casas_residenciais, compatibilidade_cnae, motivos_incompatibilidade_json,
+               sugestao_nivel_risco, analise_detalhada, tipo_local_esperado, risco_final,
+               flags_risco_json, score_risco, analisado_em
+        FROM analises_risco_endereco
+        WHERE cnpj = ?
+        ORDER BY analisado_em DESC
+        LIMIT 1
+    """, (cnpj_clean,))
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        motivos = []
+        if result[6]:
+            try:
+                motivos = json.loads(result[6])
+            except:
+                pass
+        
+        flags = []
+        if result[11]:
+            try:
+                flags = json.loads(result[11])
+            except:
+                pass
+        
+        return {
+            "analise_visual": {
+                "zona_aparente": result[0],
+                "tipo_via": result[1],
+                "presenca_placas_comerciais": bool(result[2]) if result[2] is not None else False,
+                "presenca_vitrines_ou_lojas": bool(result[3]) if result[3] is not None else False,
+                "presenca_casas_residenciais": bool(result[4]) if result[4] is not None else False,
+                "compatibilidade_cnae": result[5],
+                "motivos_incompatibilidade": motivos,
+                "sugestao_nivel_risco": result[7],
+                "analise_detalhada": result[8]
+            },
+            "tipo_local_esperado": result[9],
+            "risco_final": result[10],
+            "flags_risco": flags,
+            "score_risco": result[12],
+            "analisado_em": result[13]
+        }
+    
+    return None
+
+
+def save_cnae_tipo_local(cnae_codigo: str, tipo_local: str) -> bool:
+    """
+    Salva ou atualiza mapeamento de CNAE para tipo de local esperado.
+    
+    Args:
+        cnae_codigo: Código do CNAE (ex: "6201" ou "6201-5/01")
+        tipo_local: Tipo de local esperado (COMERCIAL, ESCRITORIO, INDUSTRIAL, ECOMMERCE_DOMICILIAR_OK)
+    
+    Returns:
+        True se salvou com sucesso, False caso contrário
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Limpar código CNAE
+        cnae_clean = cnae_codigo.replace("-", "").replace("/", "").replace(".", "").strip()
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO cnae_tipo_local 
+            (cnae_codigo, tipo_local_esperado, atualizado_em)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (cnae_clean, tipo_local))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Erro ao salvar mapeamento CNAE: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_tipo_local_esperado_cnae(cnae_codigo: str) -> Optional[str]:
+    """
+    Busca tipo de local esperado para um CNAE no banco de dados.
+    
+    Args:
+        cnae_codigo: Código do CNAE (ex: "6201" ou "6201-5/01")
+    
+    Returns:
+        Tipo de local esperado ou None se não encontrado
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Limpar código CNAE
+    cnae_clean = cnae_codigo.replace("-", "").replace("/", "").replace(".", "").strip()
+    
+    # Tentar buscar código exato
+    cursor.execute("""
+        SELECT tipo_local_esperado FROM cnae_tipo_local
+        WHERE cnae_codigo = ?
+    """, (cnae_clean,))
+    
+    result = cursor.fetchone()
+    if result:
+        conn.close()
+        return result[0]
+    
+    # Tentar buscar por prefixo (primeiros 4 dígitos)
+    if len(cnae_clean) >= 4:
+        prefixo = cnae_clean[:4]
+        cursor.execute("""
+            SELECT tipo_local_esperado FROM cnae_tipo_local
+            WHERE cnae_codigo = ?
+        """, (prefixo,))
+        
+        result = cursor.fetchone()
+        if result:
+            conn.close()
+            return result[0]
+    
+    conn.close()
     return None

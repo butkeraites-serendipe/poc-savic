@@ -277,6 +277,114 @@ def show_homepage():
                             st.warning("⚠️ Alguns erros ocorreram durante o processamento:")
                             for erro in erros:
                                 st.write(f"- {erro}")
+                        
+                        # Seção de Análise de Risco de Endereço (Gemini Vision)
+                        if street_view_image_bytes or (place_photos and len(place_photos) > 0):
+                            st.divider()
+                            st.write("**🔍 Análise de Risco de Endereço (Gemini Vision):**")
+                            
+                            from address_risk_service import analisar_endereco_completo
+                            from database import get_analise_risco_endereco
+                            
+                            analise_existente = get_analise_risco_endereco(cnpj_clean)
+                            
+                            col1, col2 = st.columns([3, 1])
+                            with col2:
+                                if st.button("🤖 Analisar Risco", use_container_width=True, key="btn_analisar_risco"):
+                                    with st.spinner("Analisando imagem do endereço com Gemini Vision..."):
+                                        try:
+                                            # Preparar CNAEs
+                                            cnaes = []
+                                            if main_activity and isinstance(main_activity, dict):
+                                                cnaes.append({
+                                                    "codigo": str(main_activity.get("id", "")),
+                                                    "descricao": main_activity.get("text", "")
+                                                })
+                                            if side_activities and isinstance(side_activities, list):
+                                                for sec in side_activities:
+                                                    if isinstance(sec, dict):
+                                                        cnaes.append({
+                                                            "codigo": str(sec.get("id", "")),
+                                                            "descricao": sec.get("text", "")
+                                                        })
+                                            
+                                            # Usar imagem disponível
+                                            image_bytes = street_view_image_bytes
+                                            if not image_bytes and place_photos:
+                                                image_bytes = place_photos[0].get("image_bytes")
+                                            
+                                            if image_bytes and cnaes:
+                                                resultado = analisar_endereco_completo(
+                                                    cnpj=cnpj_clean,
+                                                    image_bytes=image_bytes,
+                                                    cnaes=cnaes,
+                                                    razao_social=company_name,
+                                                    nome_fantasia=alias
+                                                )
+                                                
+                                                if resultado.get("erro"):
+                                                    st.error(f"Erro na análise: {resultado['erro']}")
+                                                else:
+                                                    st.success("Análise de risco concluída!")
+                                                    st.rerun()
+                                            else:
+                                                st.error("Imagem ou CNAEs não disponíveis para análise.")
+                                        except Exception as e:
+                                            st.error(f"Erro ao analisar risco: {str(e)}")
+                            
+                            # Exibir análise existente
+                            if analise_existente:
+                                analise_visual = analise_existente.get("analise_visual", {})
+                                
+                                # Indicador de risco
+                                risco_final = analise_existente.get("risco_final", "INDEFINIDO")
+                                score_risco = analise_existente.get("score_risco", 0)
+                                
+                                if risco_final == "ALTO":
+                                    st.error(f"🚨 **Risco ALTO** (Score: {score_risco}/100)")
+                                elif risco_final == "MEDIO":
+                                    st.warning(f"⚠️ **Risco MÉDIO** (Score: {score_risco}/100)")
+                                elif risco_final == "BAIXO":
+                                    st.success(f"✅ **Risco BAIXO** (Score: {score_risco}/100)")
+                                else:
+                                    st.info(f"❓ **Risco INDEFINIDO** (Score: {score_risco}/100)")
+                                
+                                # Detalhes da análise
+                                with st.expander("📊 Detalhes da Análise Visual"):
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.write(f"**Zona Aparente:** {analise_visual.get('zona_aparente', 'N/A')}")
+                                        st.write(f"**Tipo de Via:** {analise_visual.get('tipo_via', 'N/A')}")
+                                        st.write(f"**Tipo Local Esperado:** {analise_existente.get('tipo_local_esperado', 'N/A')}")
+                                    with col2:
+                                        st.write(f"**Placas Comerciais:** {'Sim' if analise_visual.get('presenca_placas_comerciais') else 'Não'}")
+                                        st.write(f"**Vitrines/Lojas:** {'Sim' if analise_visual.get('presenca_vitrines_ou_lojas') else 'Não'}")
+                                        st.write(f"**Casas Residenciais:** {'Sim' if analise_visual.get('presenca_casas_residenciais') else 'Não'}")
+                                    
+                                    compatibilidade = analise_visual.get("compatibilidade_cnae", "N/A")
+                                    st.write(f"**Compatibilidade CNAE:** {compatibilidade}")
+                                    
+                                    motivos = analise_visual.get("motivos_incompatibilidade", [])
+                                    if motivos:
+                                        st.write("**Motivos de Incompatibilidade:**")
+                                        for motivo in motivos:
+                                            st.write(f"- {motivo}")
+                                
+                                # Flags de risco
+                                flags = analise_existente.get("flags_risco", [])
+                                if flags:
+                                    with st.expander("🏷️ Flags de Risco"):
+                                        for flag in flags:
+                                            st.write(f"- {flag}")
+                                
+                                # Análise detalhada
+                                analise_detalhada = analise_visual.get("analise_detalhada", "")
+                                if analise_detalhada:
+                                    with st.expander("📝 Análise Detalhada"):
+                                        st.write(analise_detalhada)
+                                
+                                if analise_existente.get("analisado_em"):
+                                    st.caption(f"Análise realizada em: {analise_existente['analisado_em']}")
             
             # Todas as atividades CNAE (Principal + Secundárias)
             st.divider()
