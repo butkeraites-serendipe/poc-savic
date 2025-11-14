@@ -127,6 +127,61 @@ def gerar_relatorio_excel(
     
     linha_atual += 1
     
+    # SCORE DE RISCO EM DESTAQUE (logo após dados da empresa)
+    risco_final = analise_risco.get("risco_final", "INDEFINIDO")
+    score_risco = analise_risco.get("score_risco", 0)
+    
+    ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+    celula_score_titulo = ws[f"A{linha_atual}"]
+    celula_score_titulo.value = "SCORE DE RISCO"
+    celula_score_titulo.font = Font(name="Arial", size=16, bold=True, color="FFFFFF")
+    celula_score_titulo.fill = fill_titulo
+    celula_score_titulo.alignment = alinhamento_centro
+    linha_atual += 1
+    
+    ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+    celula_score_valor = ws[f"A{linha_atual}"]
+    celula_score_valor.value = f"{score_risco}/100"
+    
+    # Aplicar cores e estilos baseados no score
+    if risco_final == "ALTO" or score_risco >= 60:
+        celula_score_valor.font = Font(name="Arial", size=24, bold=True, color="FFFFFF")
+        celula_score_valor.fill = fill_risco_alto
+    elif risco_final == "MEDIO" or score_risco >= 30:
+        celula_score_valor.font = Font(name="Arial", size=24, bold=True, color="000000")
+        celula_score_valor.fill = fill_risco_medio
+    elif risco_final == "BAIXO":
+        celula_score_valor.font = Font(name="Arial", size=24, bold=True, color="FFFFFF")
+        celula_score_valor.fill = fill_risco_baixo
+    else:
+        celula_score_valor.font = Font(name="Arial", size=24, bold=True, color="FFFFFF")
+        celula_score_valor.fill = fill_cinza
+    
+    celula_score_valor.alignment = alinhamento_centro
+    celula_score_valor.border = border
+    linha_atual += 1
+    
+    ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
+    celula_risco_status = ws[f"A{linha_atual}"]
+    celula_risco_status.value = f"Risco: {risco_final}"
+    celula_risco_status.font = Font(name="Arial", size=12, bold=True)
+    celula_risco_status.alignment = alinhamento_centro
+    celula_risco_status.border = border
+    
+    if risco_final == "ALTO":
+        celula_risco_status.fill = fill_risco_alto
+        celula_risco_status.font = Font(name="Arial", size=12, bold=True, color="FFFFFF")
+    elif risco_final == "MEDIO":
+        celula_risco_status.fill = fill_risco_medio
+        celula_risco_status.font = Font(name="Arial", size=12, bold=True, color="000000")
+    elif risco_final == "BAIXO":
+        celula_risco_status.fill = fill_risco_baixo
+        celula_risco_status.font = Font(name="Arial", size=12, bold=True, color="FFFFFF")
+    else:
+        celula_risco_status.fill = fill_cinza
+    
+    linha_atual += 2
+    
     # SEÇÃO 2: ENDEREÇO
     ws.merge_cells(f"A{linha_atual}:D{linha_atual}")
     celula_sec2 = ws[f"A{linha_atual}"]

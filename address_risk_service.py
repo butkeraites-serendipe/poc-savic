@@ -401,14 +401,61 @@ def analisar_endereco_completo(
         tipo_local_esperado=tipo_local_esperado
     )
     
+    # Adicionar peso de typosquatting ao score (PESO ALTO)
+    score_risco = resultado_risco.get("score_risco", 0)
+    flags_risco = resultado_risco.get("flags_risco", [])
+    
+    # Verificar typosquatting e adicionar ao score
+    try:
+        from database import get_email_cnpja, get_dominio_email
+        from typosquatting_detector import detect_typosquatting
+        
+        cnpj_clean = "".join(filter(str.isdigit, cnpj))
+        email_cnpja = get_email_cnpja(cnpj_clean)
+        # Buscar email cadastrado da empresa
+        cnpj_formatted = f"{cnpj_clean[:2]}.{cnpj_clean[2:5]}.{cnpj_clean[5:8]}/{cnpj_clean[8:12]}-{cnpj_clean[12:]}" if len(cnpj_clean) == 14 else cnpj
+        import sqlite3
+        conn = sqlite3.connect("savic.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT email FROM empresas WHERE cnpj = ? OR cnpj = ?", (cnpj_formatted, cnpj_clean))
+        empresa_row = cursor.fetchone()
+        conn.close()
+        
+        if empresa_row and empresa_row[0]:
+            email_cadastrado = empresa_row[0]
+            dominio_cadastro = get_dominio_email(email_cadastrado)
+            dominio_cnpja = get_dominio_email(email_cnpja) if email_cnpja else None
+            
+            if dominio_cadastro and dominio_cnpja and dominio_cadastro != dominio_cnpja:
+                typosquatting_result = detect_typosquatting(dominio_cadastro, dominio_cnpja)
+                if typosquatting_result.get("suspeito"):
+                    flags_risco.append("TYPOSQUATTING_DETECTADO")
+                    # Peso alto para typosquatting: adiciona 50 pontos ao score
+                    score_risco += 50
+    except Exception as e:
+        # Se houver erro, não bloquear a análise
+        print(f"Erro ao verificar typosquatting para score: {e}")
+        pass
+    
+    # Limitar score entre 0 e 100
+    score_risco = min(100, max(0, score_risco))
+    
+    # Recalcular risco final baseado no score atualizado
+    if score_risco >= 60:
+        risco_final = "ALTO"
+    elif score_risco >= 30:
+        risco_final = "MEDIO"
+    else:
+        risco_final = "BAIXO"
+    
     # Montar resultado completo
     resultado_completo = {
         "erro": None,
         "analise_visual": analise_visual,
         "tipo_local_esperado": tipo_local_esperado,
-        "risco_final": resultado_risco["risco_final"],
-        "flags_risco": resultado_risco["flags_risco"],
-        "score_risco": resultado_risco.get("score_risco", 0)
+        "risco_final": risco_final,
+        "flags_risco": flags_risco,
+        "score_risco": score_risco
     }
     
     # Salvar no banco de dados
