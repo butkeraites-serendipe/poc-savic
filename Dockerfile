@@ -18,9 +18,13 @@ COPY . .
 # Criar diretório para banco de dados (se necessário)
 RUN mkdir -p /app/data
 
+# Copiar e tornar executável o script de entrada
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+
 # Expor porta
 EXPOSE 8501
 
-# Comando para rodar Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
+# Usar script de entrada que garante criação do usuário
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 

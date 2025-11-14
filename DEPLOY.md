@@ -107,6 +107,35 @@ Este documento descreve as melhores opções para fazer deploy da aplicação SA
    ```
 
 3. **Deploy no servidor:**
+   
+   **Opção A - Usando docker compose (recomendado):**
+   ```bash
+   # No servidor, crie um arquivo .env com as variáveis:
+   # GEMINI_API_KEY=seu_key
+   # GOOGLE_MAPS_API_KEY=seu_key
+   # CNPJA_API_KEY=seu_key
+   
+   docker compose up -d
+   ```
+   
+   **Acessar a aplicação:**
+   - Se estiver rodando localmente: http://localhost:8501
+   - Se estiver em um servidor remoto: http://IP_DO_SERVIDOR:8501
+   - Para verificar se está rodando: `docker compose ps`
+   - Para ver os logs: `docker compose logs -f`
+   
+   **Credenciais padrão:**
+   - Username: `savic`
+   - Senha: `serendipe@123`
+   
+   > **Nota:** O usuário padrão é criado automaticamente na primeira inicialização do container. Se você já tinha um banco de dados antigo, pode ser necessário fazer rebuild:
+   > ```bash
+   > docker compose down
+   > docker compose build --no-cache
+   > docker compose up -d
+   > ```
+   
+   **Opção B - Usando docker build/run diretamente:**
    ```bash
    # No servidor
    docker build -t savic-app .

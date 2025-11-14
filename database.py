@@ -214,6 +214,9 @@ def init_database():
     except sqlite3.OperationalError:
         pass
     
+    # Criar usuário padrão "savic" se não existir
+    _criar_usuario_padrao(cursor)
+    
     conn.commit()
     conn.close()
 
@@ -221,6 +224,29 @@ def init_database():
 def hash_password(password: str) -> str:
     """Gera hash SHA-256 da senha."""
     return hashlib.sha256(password.encode()).hexdigest()
+
+
+def _criar_usuario_padrao(cursor):
+    """Cria o usuário padrão 'savic' se não existir."""
+    username = "savic"
+    password = "serendipe@123"
+    
+    # Verificar se o usuário já existe
+    cursor.execute("SELECT id FROM users WHERE username = ?", (username,))
+    if cursor.fetchone():
+        # Usuário já existe, não precisa criar
+        return
+    
+    # Criar usuário com senha hash
+    password_hash = hash_password(password)
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+            (username, password_hash)
+        )
+    except sqlite3.IntegrityError:
+        # Usuário já existe (race condition)
+        pass
 
 
 def create_user(username: str, password: str) -> bool:
