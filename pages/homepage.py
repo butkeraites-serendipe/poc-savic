@@ -1,6 +1,7 @@
 import streamlit as st
 import re
 import base64
+from datetime import datetime
 from io import BytesIO
 from database import (
     save_empresa, get_empresas_by_user, save_endereco_geocoding, get_endereco_geocoding,
@@ -385,6 +386,24 @@ def show_homepage():
                                 
                                 if analise_existente.get("analisado_em"):
                                     st.caption(f"Análise realizada em: {analise_existente['analisado_em']}")
+                                
+                                # Botão para gerar relatório Excel
+                                st.divider()
+                                from relatorio_excel import gerar_relatorio_para_cnpj
+                                
+                                try:
+                                    relatorio_bytes = gerar_relatorio_para_cnpj(cnpj_clean)
+                                    if relatorio_bytes:
+                                        nome_arquivo = f"relatorio_risco_{cnpj_clean}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                                        st.download_button(
+                                            label="📥 Baixar Relatório Excel",
+                                            data=relatorio_bytes,
+                                            file_name=nome_arquivo,
+                                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            use_container_width=True
+                                        )
+                                except Exception as e:
+                                    st.error(f"Erro ao gerar relatório: {str(e)}")
             
             # Todas as atividades CNAE (Principal + Secundárias)
             st.divider()
